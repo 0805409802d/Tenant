@@ -3,20 +3,18 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class FinanceService {
   static final _supabase = Supabase.instance.client;
 
-  /// Obtiene los pagos realizados a la plataforma (Para el Admin o Usuario)
-  /// Si se pasa profileId, obtiene los de ese usuario. Si es Admin, puede mandar null.
   static Future<List<Map<String, dynamic>>> getPlatformPayments({String? profileId}) async {
     try {
       var query = _supabase.from('platform_payments').select('''
         id, concept, amount, status, payment_date, created_at,
         profiles:profile_id (business_name, email, role)
-      ''').order('created_at', ascending: false);
+      ''');
 
       if (profileId != null) {
         query = query.eq('profile_id', profileId);
       }
 
-      final res = await query;
+      final res = await query.order('created_at', ascending: false);
       return List<Map<String, dynamic>>.from(res);
     } catch (e) {
       return [];
@@ -60,6 +58,51 @@ class FinanceService {
       return true;
     } catch (e) {
       return false;
+    }
+  }
+
+  /// Llama a la función RPC get_tenant_profitability_report en Supabase (Solo para el Manager)
+  static Future<Map<String, dynamic>?> getProfitabilityReport({
+    required String tenantId,
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    try {
+      final res = await _supabase.rpc('get_tenant_profitability_report', params: {
+        'p_tenant_id': tenantId,
+        'p_start_date': startDate.toUtc().toIso8601String(),
+        'p_end_date': endDate.toUtc().toIso8601String(),
+      });
+      if (res != null && res is List && res.isNotEmpty) {
+        return Map<String, dynamic>.from(res.first);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Obtiene los pedidos aprobados con sus detalles para análisis de rentabilidad (Para el Manager)
+  static Future<List<Map<String, dynamic>>> getApprovedOrdersForAnalytics({
+    required String tenantId,
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    try {
+      final res = await _supabase
+          .from('orders')
+          .select('''
+            id, total_amount, created_at, status,
+            order_items (quantity, unit_price, unit_cost_price, products (name))
+          ''')
+          .eq('tenant_id', tenantId)
+          .eq('status', 'approved')
+          .gte('created_at', startDate.toUtc().toIso8601String())
+          .lte('created_at', endDate.toUtc().toIso8601String())
+          .order('created_at', ascending: true);
+      return List<Map<String, dynamic>>.from(res);
+    } catch (_) {
+      return [];
     }
   }
 }

@@ -8,6 +8,7 @@ import '../../../shared/theme/tenant_theme_provider.dart';
 import '../../../shared/utils/responsive.dart';
 import '../../../shared/widgets/app_components.dart';
 import '../../../shared/widgets/app_widgets.dart';
+import '../../../core/utils/formatters.dart';
 
 class ManagementHomeScreen extends StatefulWidget {
   const ManagementHomeScreen({super.key});
@@ -21,6 +22,7 @@ class _ManagementHomeScreenState extends State<ManagementHomeScreen> {
   int _totalProducts = 0;
   int _totalWorkers  = 0;
   int _totalOrders   = 0;
+  int _criticalProducts = 0;
   int _productLimit  = 20;
   String _planTier   = 'freemium';
   bool _loading = true;
@@ -46,13 +48,23 @@ class _ManagementHomeScreenState extends State<ManagementHomeScreen> {
       final tenant = await TenantService.getCurrentUserTenant();
       final isWorker = await TenantService.isCurrentUserWorker();
 
-      int products = 0, workers = 0, orders = 0, pending = 0, approvedToday = 0;
+      int products = 0, workers = 0, orders = 0, pending = 0, approvedToday = 0, critical = 0;
       if (tenant != null) {
         final tenantId = tenant['id'];
-        final pRes = await db.from('products').select('id', const FetchOptions(count: CountOption.exact, head: true)).eq('tenant_id', tenantId);
+        final allProds = await db.from('products').select('stock_quantity, min_stock_alert, track_inventory').eq('tenant_id', tenantId);
+        products = allProds.length;
+        
+        for (var row in allProds) {
+          final track = row['track_inventory'] as bool? ?? true;
+          final stock = row['stock_quantity'] as int? ?? 0;
+          final minVal = row['min_stock_alert'] as int? ?? 5;
+          if (track && stock <= minVal) {
+            critical++;
+          }
+        }
+
         final wRes = await db.from('workers').select('id', const FetchOptions(count: CountOption.exact, head: true)).eq('tenant_id', tenantId);
         final oRes = await db.from('orders').select('id', const FetchOptions(count: CountOption.exact, head: true)).eq('tenant_id', tenantId);
-        products = pRes.count ?? 0;
         workers  = wRes.count ?? 0;
         orders   = oRes.count ?? 0;
 
@@ -101,6 +113,7 @@ class _ManagementHomeScreenState extends State<ManagementHomeScreen> {
         _totalOrders = orders;
         _pendingOrders = pending;
         _approvedToday = approvedToday;
+        _criticalProducts = critical;
         _isWorker = isWorker;
         _loading = false;
       });
@@ -115,7 +128,8 @@ class _ManagementHomeScreenState extends State<ManagementHomeScreen> {
   }
 
   Future<void> _openWebsite(String slug) async {
-    final uri = Uri.parse('https://$slug.quinindews.com');
+    final urlStr = AppFormatters.tenantUrl(slug);
+    final uri = Uri.parse(urlStr);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
@@ -156,7 +170,6 @@ class _ManagementHomeScreenState extends State<ManagementHomeScreen> {
                   child: CustomScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     slivers: [
-                  // ── SliverAppBar ──────────────────────────────────────
                   // ── SliverAppBar (Hero Header) ────────────────────────
                   SliverAppBar(
                     expandedHeight: Responsive.isMobile(context) ? 200 : 175,
@@ -338,16 +351,16 @@ class _ManagementHomeScreenState extends State<ManagementHomeScreen> {
                     ),
                   ),
 
-                  // ── Contenido ───────────────────────────────────────
+                  // ── Contenido ──
                   if (_isWorker)
                     _buildWorkerContent(context, primaryColor)
                   else
                     _buildManagerContent(context, primaryColor, slug),
-                ],
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
     );
   }
 
@@ -358,6 +371,12 @@ class _ManagementHomeScreenState extends State<ManagementHomeScreen> {
     return SliverPadding(
       padding: const EdgeInsets.all(20),
       sliver: SliverList(delegate: SliverChildListDelegate([
+
+        // Alerta de Inventario Crítico
+        if (_criticalProducts > 0) ...[
+          _CriticalStockAlert(count: _criticalProducts),
+          const SizedBox(height: 20),
+        ],
 
         // Banner de pedidos pendientes
         if (_pendingOrders > 0) ...[
@@ -420,6 +439,18 @@ class _ManagementHomeScreenState extends State<ManagementHomeScreen> {
             ),
           ),
         ]),
+        const SizedBox(height: 16),
+        
+        // Módulo de Proveedores para Trabajadores
+        _Card(child: Column(children: [
+          AppListTile(
+            icon: Icons.local_shipping_outlined,
+            title: 'Proveedores',
+            subtitle: 'Directorio y contacto rápido',
+            iconColor: AppColors.accentTeal,
+            onTap: () => context.go('/suppliers'),
+          ),
+        ])),
         const SizedBox(height: 24),
 
         // Cuenta
@@ -447,12 +478,18 @@ class _ManagementHomeScreenState extends State<ManagementHomeScreen> {
   }
 
   // ────────────────────────────────────────────────────
-  // MANAGER LAYOUT (sin cambios respecto al diseño anterior)
+  // MANAGER LAYOUT
   // ────────────────────────────────────────────────────
   Widget _buildManagerContent(BuildContext context, Color primaryColor, String? slug) {
     return SliverPadding(
       padding: const EdgeInsets.all(20),
       sliver: SliverList(delegate: SliverChildListDelegate([
+
+        // Alerta de Inventario Crítico
+        if (_criticalProducts > 0) ...[
+          _CriticalStockAlert(count: _criticalProducts),
+          const SizedBox(height: 20),
+        ],
 
         // Stats
         Row(children: [
@@ -480,7 +517,7 @@ class _ManagementHomeScreenState extends State<ManagementHomeScreen> {
                     children: [
                       const Text('Tu sitio web', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                       const SizedBox(height: 2),
-                      Text('$slug.quinindews.com', style: TextStyle(fontSize: 13, color: primaryColor, decoration: TextDecoration.underline)),
+                      Text(AppFormatters.tenantUrl(slug), style: TextStyle(fontSize: 13, color: primaryColor, decoration: TextDecoration.underline)),
                     ],
                   ),
                 ),
@@ -496,21 +533,35 @@ class _ManagementHomeScreenState extends State<ManagementHomeScreen> {
           const SizedBox(height: 16),
         ],
 
-        // Más Herramientas (secundarias, ya que las principales están en el Navbar)
-        const Text('MÁS HERRAMIENTAS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 1.0)),
+        // Más Herramientas
+        const Text('HERRAMIENTAS ADMINISTRATIVAS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 1.0)),
         const SizedBox(height: 12),
         _Card(child: Column(children: [
           AppListTile(
             icon: Icons.people_outline_rounded,
-            title: 'Clientes',
-            subtitle: 'Directorio y fidelización',
+            title: 'Clientes y Créditos',
+            subtitle: 'Directorio, fiados y cuentas corrientes',
             iconColor: AppColors.primary,
             onTap: () => context.go('/clients'),
           ),
           AppListTile(
+            icon: Icons.local_shipping_outlined,
+            title: 'Proveedores',
+            subtitle: 'Directorio y compras de mercadería',
+            iconColor: AppColors.accentTeal,
+            onTap: () => context.go('/suppliers'),
+          ),
+          AppListTile(
+            icon: Icons.pie_chart_outline_rounded,
+            title: 'Rentabilidad y Finanzas',
+            subtitle: 'Gráficas, márgenes y salud comercial',
+            iconColor: AppColors.accentGreen,
+            onTap: () => context.go('/finance'),
+          ),
+          AppListTile(
             icon: Icons.history_rounded,
             title: 'Historial',
-            subtitle: 'Movimientos y reportes',
+            subtitle: 'Movimientos y reportes contables',
             iconColor: AppColors.accentPurple,
             onTap: () => context.go('/history'),
           ),
@@ -518,7 +569,7 @@ class _ManagementHomeScreenState extends State<ManagementHomeScreen> {
             icon: Icons.qr_code_2_rounded,
             title: 'Descargar QR',
             subtitle: 'Genera el PDF de tu negocio',
-            iconColor: AppColors.accentGreen,
+            iconColor: AppColors.accentAmber,
             onTap: () => context.go('/settings'),
           ),
           AppListTile(
@@ -539,6 +590,66 @@ class _ManagementHomeScreenState extends State<ManagementHomeScreen> {
         ])),
         const SizedBox(height: 32),
       ])),
+    );
+  }
+}
+
+// ────────────────────────────────────────────────────
+// ALERTA DE STOCK CRÍTICO (Glassmorphism / Gradient)
+// ────────────────────────────────────────────────────
+class _CriticalStockAlert extends StatelessWidget {
+  const _CriticalStockAlert({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFF8C00), Color(0xFFFF4500)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(color: const Color(0xFFFF4500).withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 4)),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber_rounded, color: AppColors.white, size: 28),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '¡Alerta de Inventario Crítico!',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.white),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Tienes $count producto(s) con stock por debajo del límite mínimo.',
+                  style: TextStyle(fontSize: 13, color: AppColors.white.withOpacity(0.9)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.white,
+              foregroundColor: const Color(0xFFFF4500),
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            ),
+            onPressed: () => context.go('/products'),
+            child: const Text('Revisar', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -568,7 +679,6 @@ class _PendingOrdersBanner extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // Icono con pulso simulado
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(color: AppColors.white.withValues(alpha: 0.2), shape: BoxShape.circle),

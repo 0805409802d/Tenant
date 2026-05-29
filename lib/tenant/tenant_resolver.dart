@@ -48,6 +48,11 @@ class TenantResolver {
     final host = Uri.base.host;
     final path = Uri.base.path;
 
+    // Soporte para desarrollo local: emular subdominios usando ?tenant=slug
+    if (kDebugMode && Uri.base.queryParameters.containsKey('tenant')) {
+      return TenantType.client;
+    }
+
     // Admin: ruta secreta
     if (path.startsWith('/d8t1-admin-panel')) return TenantType.admin;
 
@@ -83,6 +88,12 @@ class TenantResolver {
     // Dev override
     if (_devOverride == TenantType.client) return _devClientSlug;
     if (!kIsWeb) return '';
+
+    // Soporte para desarrollo local: emular subdominios usando ?tenant=slug
+    if (kDebugMode && Uri.base.queryParameters.containsKey('tenant')) {
+      return Uri.base.queryParameters['tenant']!;
+    }
+
     final host = Uri.base.host;
     final parts = host.split('.');
     if (parts.length >= 3 && host.endsWith('quinindews.com')) {

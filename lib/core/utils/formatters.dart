@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 /// Formateadores de datos para mostrar en la UI.
 ///
 /// Uso:
@@ -95,8 +97,12 @@ abstract final class AppFormatters {
 
   /// Construye la URL pública de un tenant.
   /// "mi-restaurante" → "https://mi-restaurante.quinindews.com"
-  static String tenantUrl(String slug) =>
-      'https://$slug.quinindews.com';
+  static String tenantUrl(String slug) {
+    if (kDebugMode && kIsWeb) {
+      return '${Uri.base.origin}/?tenant=$slug';
+    }
+    return 'https://$slug.quinindews.com';
+  }
 
   // ──────────────────────────────────────────
   // TEXTO

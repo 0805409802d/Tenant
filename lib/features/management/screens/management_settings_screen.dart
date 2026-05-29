@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -27,12 +28,18 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
   
   final _businessNameController = TextEditingController();
   final _linkController         = TextEditingController();
+  final _waNumberCtrl           = TextEditingController();
+  final _shippingCostCtrl       = TextEditingController(text: '0.00');
+  final _instructionsCtrl       = TextEditingController();
 
-  bool _loading     = true;
-  bool _savingName  = false;
-  bool _savingColor = false;
-  bool _savingLogo  = false;
-  bool _savingPhoto = false;
+  bool _loading          = true;
+  bool _savingName       = false;
+  bool _savingColor      = false;
+  bool _savingLogo       = false;
+  bool _savingPhoto      = false;
+  bool _savingWhatsapp   = false;
+  bool _savingCover      = false;
+  bool _waEnabled        = true;
 
   String? _nameFeedback;
   bool    _nameIsError = true;
@@ -40,6 +47,7 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
   Color _selectedColor = const Color(0xFF1E6BFF);
   String? _logoUrl;
   String? _avatarUrl;
+  String? _catalogCoverUrl;
 
   late AnimationController _animCtrl;
   late Animation<double>   _fadeAnim;
@@ -69,6 +77,11 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
         _tenantId = tenant['id'];
         _businessNameController.text = tenant['business_name'] ?? '';
         _linkController.text = tenant['link_url'] ?? 'https://${tenant['slug']}.quinindews.com';
+        _waNumberCtrl.text = tenant['whatsapp_number'] ?? '';
+        _shippingCostCtrl.text = (tenant['shipping_cost'] ?? 0.00).toString();
+        _instructionsCtrl.text = tenant['manual_payment_instructions'] ?? '';
+        _waEnabled = tenant['whatsapp_enabled'] ?? true;
+        _catalogCoverUrl = tenant['catalog_cover_url'];
         
         if (tenant['primary_color'] != null) {
           final hex = (tenant['primary_color'] as String).replaceAll('#', '');
@@ -93,6 +106,9 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
     _animCtrl.dispose();
     _businessNameController.dispose();
     _linkController.dispose();
+    _waNumberCtrl.dispose();
+    _shippingCostCtrl.dispose();
+    _instructionsCtrl.dispose();
     super.dispose();
   }
 
@@ -143,6 +159,28 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
       }
     } finally {
       if (mounted) setState(() => _savingColor = false);
+    }
+  }
+
+  Future<void> _saveWhatsapp() async {
+    if (_tenantId == null) return;
+    setState(() => _savingWhatsapp = true);
+    try {
+      await _db.from('tenants').update({
+        'whatsapp_number': _waNumberCtrl.text.trim(),
+        'whatsapp_enabled': _waEnabled,
+        'shipping_cost': double.tryParse(_shippingCostCtrl.text.trim()) ?? 0.00,
+        'manual_payment_instructions': _instructionsCtrl.text.trim(),
+      }).eq('id', _tenantId!);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Configuración de WhatsApp guardada')));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al guardar la configuración')));
+      }
+    } finally {
+      if (mounted) setState(() => _savingWhatsapp = false);
     }
   }
 
@@ -233,6 +271,38 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
       if (mounted) {
         setState(() => _savingLogo = false);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al subir el logo del negocio')));
+      }
+    }
+  }
+
+  Future<void> _pickAndUploadCover() async {
+    if (_tenantId == null) return;
+    final picker = ImagePicker();
+    final xfile = await picker.pickImage(source: ImageSource.gallery, maxWidth: 1200, maxHeight: 600);
+    if (xfile == null) return;
+
+    setState(() => _savingCover = true);
+    try {
+      final bytes = await xfile.readAsBytes();
+      final ext = xfile.name.split('.').last.toLowerCase();
+      final finalExt = (ext == 'png' || ext == 'jpg' || ext == 'jpeg') ? ext : 'png';
+      final contentType = finalExt == 'png' ? 'image/png' : 'image/jpeg';
+      final path = '$_tenantId/cover_${DateTime.now().millisecondsSinceEpoch}.$finalExt';
+      
+      await _db.storage.from('logos').uploadBinary(path, bytes, fileOptions: FileOptions(contentType: contentType));
+      final publicUrl = _db.storage.from('logos').getPublicUrl(path);
+      await _db.from('tenants').update({'catalog_cover_url': publicUrl}).eq('id', _tenantId!);
+      
+      if (mounted) {
+        setState(() {
+          _catalogCoverUrl = '$publicUrl?t=${DateTime.now().millisecondsSinceEpoch}';
+          _savingCover = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _savingCover = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al subir la portada del catálogo')));
       }
     }
   }
@@ -345,6 +415,14 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
                       subtitle: 'Comparte tu página con tus clientes',
                       child: _buildLinkAndQrSection(),
                     ),
+                    const SizedBox(height: 16),
+
+                    SectionCard(
+                      title: 'Catálogo de WhatsApp',
+                      icon: Icons.chat_rounded,
+                      subtitle: 'Configura las ventas por WhatsApp y pagos manuales',
+                      child: _buildWhatsappSection(),
+                    ),
                     const SizedBox(height: 32),
                   ],
                 ),
@@ -352,7 +430,7 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
             ),
           ),
         ),
-    );
+      );
   }
 
   Widget _buildPhotoSection() => Center(
@@ -583,6 +661,66 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
                 ],
               ),
             ),
+        ],
+      );
+
+  Widget _buildWhatsappSection() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Habilitar pedido por WhatsApp', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              Switch.adaptive(
+                value: _waEnabled,
+                activeColor: TenantThemeProvider.of(context).primaryColor,
+                onChanged: (val) => setState(() => _waEnabled = val),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const AppLabel('Número de WhatsApp comercial'), const SizedBox(height: 6),
+          AppTextField(controller: _waNumberCtrl, hint: 'Ej. +593999999999', icon: Icons.phone_rounded, keyboardType: TextInputType.phone),
+          const SizedBox(height: 16),
+          const AppLabel('Costo de envío a domicilio'), const SizedBox(height: 6),
+          AppTextField(controller: _shippingCostCtrl, hint: '0.00', icon: Icons.delivery_dining_rounded, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+          const SizedBox(height: 16),
+          const AppLabel('Instrucciones para transferencia bancaria'), const SizedBox(height: 6),
+          AppTextField(controller: _instructionsCtrl, hint: 'Banco Pichincha - Ahorros: 2201... Titular: ...', icon: Icons.account_balance_wallet_outlined),
+          const SizedBox(height: 16),
+          const AppLabel('Banner de portada del catálogo'), const SizedBox(height: 6),
+          GestureDetector(
+            onTap: _pickAndUploadCover,
+            child: Container(
+              width: double.infinity,
+              height: 120,
+              decoration: BoxDecoration(
+                color: AppColors.surfaceGrey,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border),
+                image: _catalogCoverUrl != null ? DecorationImage(image: NetworkImage(_catalogCoverUrl!), fit: BoxFit.cover) : null,
+              ),
+              child: _catalogCoverUrl == null
+                  ? Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.add_photo_alternate_outlined, color: AppColors.textSecondary, size: 24),
+                        const SizedBox(height: 8),
+                        const Text('Subir banner de portada', style: TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+                      ],
+                    )
+                  : Container(
+                      decoration: BoxDecoration(color: AppColors.overlay(0.3), borderRadius: BorderRadius.circular(14)),
+                      child: const Center(child: Icon(Icons.edit_outlined, color: AppColors.white, size: 24)),
+                    ),
+            ),
+          ),
+          if (_savingCover) ...[
+            const SizedBox(height: 8),
+            const Center(child: CircularProgressIndicator()),
+          ],
+          const SizedBox(height: 24),
+          AppButton(label: 'Guardar configuración', onPressed: _saveWhatsapp, isLoading: _savingWhatsapp),
         ],
       );
 }

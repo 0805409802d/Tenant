@@ -53,6 +53,10 @@ class ProductService {
     required double price,
     String? description,
     String? imageUrl,
+    int stockQuantity = 0,
+    int minStockAlert = 5,
+    bool trackInventory = true,
+    double costPrice = 0.0,
   }) async {
     try {
       await _supabase.from('products').insert({
@@ -61,6 +65,10 @@ class ProductService {
         'price': price,
         'description': description,
         'image_url': imageUrl,
+        'stock_quantity': stockQuantity,
+        'min_stock_alert': minStockAlert,
+        'track_inventory': trackInventory,
+        'cost_price': costPrice,
       });
       return true;
     } catch (e) {

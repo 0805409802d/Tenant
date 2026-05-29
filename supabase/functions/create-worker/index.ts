@@ -63,28 +63,36 @@ serve(async (req) => {
       });
     }
 
-    // Verificar que el tenant pertenece al manager que llama
-    const { data: tenant } = await supabaseAdmin
+    // Verificar límite de trabajadores según el subscription_tier
+    const { data: tenantData } = await supabaseAdmin
       .from("tenants")
-      .select("id, owner_id")
+      .select("id, owner_id, subscription_tier")
       .eq("id", tenantId)
       .single();
 
-    if (!tenant || tenant.owner_id !== user.id) {
+    if (!tenantData || tenantData.owner_id !== user.id) {
       return new Response(JSON.stringify({ error: "No tienes permiso para este negocio." }), {
         status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Verificar límite de 2 trabajadores por tenant
-    const { data: existingWorkers } = await supabaseAdmin
+    let workerLimit = 1; // Default freemium
+    switch (tenantData.subscription_tier) {
+      case "freemium": workerLimit = 1; break;
+      case "low": workerLimit = 3; break;
+      case "mid": workerLimit = 5; break;
+      case "high": workerLimit = 999999; break; // Ilimitado
+      default: workerLimit = 1;
+    }
+
+    const { count: currentWorkersCount, error: countError } = await supabaseAdmin
       .from("workers")
-      .select("id")
+      .select("id", { count: "exact", head: true })
       .eq("tenant_id", tenantId);
 
-    if (existingWorkers && existingWorkers.length >= 2) {
+    if (currentWorkersCount !== null && currentWorkersCount >= workerLimit) {
       return new Response(
-        JSON.stringify({ error: "Has alcanzado el límite de 2 trabajadores por negocio." }),
+        JSON.stringify({ error: `Has alcanzado el límite de ${workerLimit} trabajador(es) para tu plan actual.` }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

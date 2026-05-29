@@ -10,6 +10,10 @@ class ClientService {
           .from('tenant_clients')
           .select('''
             created_at,
+            profile_id,
+            is_credit_approved,
+            credit_limit,
+            current_debt,
             profiles:profile_id (id, first_name, last_name, email, phone)
           ''')
           .eq('tenant_id', tenantId)

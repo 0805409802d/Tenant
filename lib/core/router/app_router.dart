@@ -24,6 +24,8 @@ import '../../features/management/screens/management_sales_screen.dart';
 import '../../features/management/screens/management_clients_screen.dart';
 import '../../features/management/screens/management_products_screen.dart';
 import '../../features/management/screens/management_subscriptions_screen.dart';
+import '../../features/management/screens/management_suppliers_screen.dart';
+import '../../features/management/screens/management_finance_screen.dart';
 import '../../features/management/screens/management_shell.dart';
 
 // ── Advertisers ───────────────────────────────
@@ -282,6 +284,14 @@ class AppRouter {
           GoRoute(
             path: '/clients',
             builder: (context, state) => const ManagementClientsScreen(),
+          ),
+          GoRoute(
+            path: '/suppliers',
+            builder: (context, state) => const ManagementSuppliersScreen(),
+          ),
+          GoRoute(
+            path: '/finance',
+            builder: (context, state) => const ManagementFinanceScreen(),
           ),
           GoRoute(
             path: '/subscriptions',
