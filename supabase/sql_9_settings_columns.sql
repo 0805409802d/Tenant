@@ -34,11 +34,16 @@ update public.tenants
   where link_url is null;
 
 -- 4. Política para que admins lean todos los perfiles (para gestión)
-create policy if not exists "Admins can view all profiles"
-  on public.profiles for select
-  using (
-    exists (
-      select 1 from public.profiles p
-      where p.id = auth.uid() and p.role = 'admin'
-    )
-  );
+do $$ 
+begin
+  if not exists (select 1 from pg_policies where policyname = 'Admins can view all profiles' and tablename = 'profiles') then
+    create policy "Admins can view all profiles"
+      on public.profiles for select
+      using (
+        exists (
+          select 1 from public.profiles p
+          where p.id = auth.uid() and p.role = 'admin'
+        )
+      );
+  end if;
+end $$;

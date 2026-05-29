@@ -261,6 +261,16 @@ class AuthService {
         'phone': phone,
       });
 
+      // Vincular cliente a la tienda inmediatamente al registrarse
+      try {
+        await _supabase.from('tenant_clients').insert({
+          'tenant_id': tenant['id'],
+          'profile_id': response.user!.id,
+        });
+      } catch (_) {
+        // Ignorar si ya existe (unique constraint)
+      }
+
       return AuthResult.ok();
     } on AuthException catch (e) {
       return AuthResult.fail(_translateAuthError(e.message));

@@ -33,12 +33,14 @@ class _ManagementLoginScreenState extends State<ManagementLoginScreen>
 
   late AnimationController _animCtrl;
   late Animation<double> _fadeAnim;
+  late Animation<double> _scaleAnim;
 
   @override
   void initState() {
     super.initState();
-    _animCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
+    _animCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
     _fadeAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut);
+    _scaleAnim = Tween<double>(begin: 0.95, end: 1.0).animate(CurvedAnimation(parent: _animCtrl, curve: Curves.easeOutBack));
     _animCtrl.forward();
   }
 
@@ -110,33 +112,87 @@ class _ManagementLoginScreenState extends State<ManagementLoginScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.surfaceGrey,
-      body: Center(
-        child: FadeTransition(
-          opacity: _fadeAnim,
-          child: Container(
-            width: 420,
-            margin: const EdgeInsets.symmetric(horizontal: 24),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.border),
-              boxShadow: [BoxShadow(color: AppColors.overlay(0.06), blurRadius: 32, offset: const Offset(0, 8))],
-            ),
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              child: Padding(
-                key: ValueKey(_view),
-                padding: const EdgeInsets.all(40),
-                child: switch (_view) {
-                  _View.credentials => _buildCredentials(),
-                  _View.enterEmail  => _buildEnterEmail(),
-                  _View.questions   => _buildQuestions(),
-                  _View.sent        => _buildSent(),
-                },
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFF3F4F6), Color(0xFFE5E7EB)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Stack(
+          children: [
+            // Decorative background elements
+            Positioned(
+              top: -100, right: -100,
+              child: Container(
+                width: 300, height: 300,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.primary.withValues(alpha: 0.05),
+                ),
               ),
             ),
-          ),
+            Positioned(
+              bottom: -50, left: -50,
+              child: Container(
+                width: 200, height: 200,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.accentTeal.withValues(alpha: 0.05),
+                ),
+              ),
+            ),
+            
+            // Main content
+            Center(
+              child: FadeTransition(
+                opacity: _fadeAnim,
+                child: ScaleTransition(
+                  scale: _scaleAnim,
+                  child: Container(
+                    width: 420,
+                    margin: const EdgeInsets.symmetric(horizontal: 24),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+                      boxShadow: [BoxShadow(color: AppColors.overlay(0.08), blurRadius: 40, offset: const Offset(0, 16))],
+                    ),
+                    child: AnimatedSize(
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 400),
+                        transitionBuilder: (child, animation) {
+                          return FadeTransition(
+                            opacity: animation,
+                            child: SlideTransition(
+                              position: Tween<Offset>(
+                                begin: const Offset(0.05, 0),
+                                end: Offset.zero,
+                              ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
+                              child: child,
+                            ),
+                          );
+                        },
+                        child: Padding(
+                          key: ValueKey(_view),
+                          padding: const EdgeInsets.all(40),
+                          child: switch (_view) {
+                            _View.credentials => _buildCredentials(),
+                            _View.enterEmail  => _buildEnterEmail(),
+                            _View.questions   => _buildQuestions(),
+                            _View.sent        => _buildSent(),
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -147,11 +203,21 @@ class _ManagementLoginScreenState extends State<ManagementLoginScreen>
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Container(width: 32, height: 3, decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(2))),
+      Center(
+        child: Container(
+          width: 56, height: 56,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(colors: [AppColors.primary, AppColors.tint(AppColors.primary, opacity: 0.8)]),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4))],
+          ),
+          child: const Icon(Icons.storefront_rounded, color: AppColors.white, size: 28),
+        ),
+      ),
       const SizedBox(height: 24),
-      Text('Bienvenido', style: TextStyle(fontFamily: 'Georgia', fontSize: 26, fontWeight: FontWeight.bold, color: AppColors.textPrimary, height: 1.2)),
-      const SizedBox(height: 4),
-      Text('Gestión de tu negocio', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+      const Center(child: Text('Bienvenido', style: TextStyle(fontFamily: 'Georgia', fontSize: 28, fontWeight: FontWeight.bold, color: AppColors.textPrimary, height: 1.2))),
+      const SizedBox(height: 8),
+      const Center(child: Text('Accede para gestionar tu negocio', style: TextStyle(fontSize: 14, color: AppColors.textSecondary))),
       const SizedBox(height: 32),
       const AppLabel('Correo electrónico'), const SizedBox(height: 6),
       AppTextField(controller: _emailCtrl, hint: 'correo@dominio.com', icon: Icons.mail_outline_rounded, keyboardType: TextInputType.emailAddress),
@@ -159,19 +225,25 @@ class _ManagementLoginScreenState extends State<ManagementLoginScreen>
       const AppLabel('Contraseña'), const SizedBox(height: 6),
       AppTextField(controller: _passCtrl, hint: '••••••••', icon: Icons.lock_outline_rounded, obscure: _obscure,
         suffixIcon: IconButton(icon: Icon(_obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: AppColors.textSecondary, size: 18), onPressed: () => setState(() => _obscure = !_obscure))),
-      if (_error != null) ...[const SizedBox(height: 12), AppFeedbackBanner(message: _error!)],
+      if (_error != null) ...[const SizedBox(height: 16), AppFeedbackBanner(message: _error!)],
       const SizedBox(height: 24),
       AppButton(label: 'Iniciar sesión', onPressed: _login, isLoading: _loading),
-      const SizedBox(height: 16),
+      const SizedBox(height: 24),
       Center(child: GestureDetector(
         onTap: () => setState(() { _view = _View.enterEmail; _recoverError = null; }),
-        child: Text('¿Olvidaste tu contraseña? Recuperar cuenta', style: TextStyle(fontSize: 13, color: AppColors.primary, decoration: TextDecoration.underline)),
+        child: const Text('¿Olvidaste tu contraseña?', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.primary)),
       )),
-      const SizedBox(height: 12),
-      Center(child: GestureDetector(
-        onTap: () => context.go('/register'),
-        child: Text('¿No tienes cuenta? Crear sitio', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
-      )),
+      const SizedBox(height: 16),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text('¿No tienes cuenta? ', style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
+          GestureDetector(
+            onTap: () => context.go('/register'),
+            child: const Text('Crear negocio', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+          ),
+        ],
+      ),
     ],
   );
 
@@ -181,15 +253,21 @@ class _ManagementLoginScreenState extends State<ManagementLoginScreen>
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       _backButton(),
-      const SizedBox(height: 20),
-      Text('Recuperar acceso', style: TextStyle(fontFamily: 'Georgia', fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-      const SizedBox(height: 6),
-      Text('Ingresa el correo de tu cuenta.', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+      const SizedBox(height: 24),
+      Container(
+        width: 48, height: 48,
+        decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
+        child: const Icon(Icons.lock_reset_rounded, color: AppColors.primary, size: 24),
+      ),
+      const SizedBox(height: 16),
+      const Text('Recuperar acceso', style: TextStyle(fontFamily: 'Georgia', fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+      const SizedBox(height: 8),
+      const Text('Ingresa el correo de tu cuenta para buscar tus preguntas de seguridad.', style: TextStyle(fontSize: 14, color: AppColors.textSecondary, height: 1.4)),
       const SizedBox(height: 24),
       const AppLabel('Correo electrónico'), const SizedBox(height: 6),
       AppTextField(controller: _recoverEmailCtrl, hint: 'correo@dominio.com', icon: Icons.mail_outline_rounded, keyboardType: TextInputType.emailAddress),
-      if (_recoverError != null) ...[const SizedBox(height: 10), AppFeedbackBanner(message: _recoverError!)],
-      const SizedBox(height: 20),
+      if (_recoverError != null) ...[const SizedBox(height: 16), AppFeedbackBanner(message: _recoverError!)],
+      const SizedBox(height: 24),
       AppButton(label: 'Continuar', onPressed: _getQuestions, isLoading: _loadingQuestions, color: AppColors.primary),
     ],
   );
@@ -200,18 +278,19 @@ class _ManagementLoginScreenState extends State<ManagementLoginScreen>
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       _backButton(onTap: () => setState(() { _view = _View.enterEmail; _recoverError = null; })),
-      const SizedBox(height: 20),
-      Text('Preguntas de seguridad', style: TextStyle(fontFamily: 'Georgia', fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-      const SizedBox(height: 6),
-      Text('Responde correctamente para recuperar tu cuenta.', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
-      const SizedBox(height: 20),
+      const SizedBox(height: 24),
+      const Text('Preguntas de seguridad', style: TextStyle(fontFamily: 'Georgia', fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+      const SizedBox(height: 8),
+      const Text('Responde correctamente para verificar que eres el dueño de la cuenta.', style: TextStyle(fontSize: 14, color: AppColors.textSecondary, height: 1.4)),
+      const SizedBox(height: 24),
       ...[(_q1!, _a1Ctrl), (_q2!, _a2Ctrl), (_q3!, _a3Ctrl)].expand((p) => [
-        Text(p.$1, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-        const SizedBox(height: 6),
+        Text(p.$1, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+        const SizedBox(height: 8),
         AppTextField(controller: p.$2, hint: 'Tu respuesta', icon: Icons.short_text_rounded),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
       ]),
-      if (_recoverError != null) ...[AppFeedbackBanner(message: _recoverError!), const SizedBox(height: 10)],
+      if (_recoverError != null) ...[AppFeedbackBanner(message: _recoverError!), const SizedBox(height: 16)],
+      const SizedBox(height: 8),
       AppButton(label: 'Validar y recuperar', onPressed: _validateAnswers, isLoading: _loadingValidate, color: AppColors.primary),
     ],
   );
@@ -221,24 +300,37 @@ class _ManagementLoginScreenState extends State<ManagementLoginScreen>
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.center,
     children: [
-      Container(width: 64, height: 64, decoration: BoxDecoration(color: AppColors.successBg, shape: BoxShape.circle),
-        child: const Icon(Icons.mark_email_read_outlined, color: AppColors.success, size: 30)),
-      const SizedBox(height: 20),
-      Text('¡Correo enviado!', style: TextStyle(fontFamily: 'Georgia', fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-      const SizedBox(height: 8),
-      Text('Revisa tu bandeja de entrada. Te enviamos un link para restablecer tu contraseña.',
-        textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5)),
+      Container(
+        width: 80, height: 80, 
+        decoration: BoxDecoration(color: AppColors.successBg, shape: BoxShape.circle),
+        child: const Icon(Icons.mark_email_read_outlined, color: AppColors.success, size: 40)
+      ),
       const SizedBox(height: 24),
+      const Text('¡Correo enviado!', style: TextStyle(fontFamily: 'Georgia', fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+      const SizedBox(height: 12),
+      const Text(
+        'Revisa tu bandeja de entrada o spam. Te enviamos un link para restablecer tu contraseña y recuperar tu acceso.',
+        textAlign: TextAlign.center, 
+        style: TextStyle(fontSize: 14, color: AppColors.textSecondary, height: 1.5)
+      ),
+      const SizedBox(height: 32),
       AppButton(label: 'Volver al inicio de sesión', onPressed: _goBack, color: AppColors.textPrimary),
     ],
   );
 
   Widget _backButton({VoidCallback? onTap}) => GestureDetector(
     onTap: onTap ?? _goBack,
-    child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(Icons.arrow_back_ios_new_rounded, size: 14, color: AppColors.textSecondary),
-      const SizedBox(width: 4),
-      Text('Volver', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
-    ]),
+    child: Row(
+      mainAxisSize: MainAxisSize.min, 
+      children: [
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(color: AppColors.surfaceGrey, borderRadius: BorderRadius.circular(8)),
+          child: const Icon(Icons.arrow_back_ios_new_rounded, size: 14, color: AppColors.textPrimary),
+        ),
+        const SizedBox(width: 8),
+        const Text('Volver', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+      ]
+    ),
   );
 }

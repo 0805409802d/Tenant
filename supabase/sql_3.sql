@@ -29,4 +29,3 @@ alter table public.security_questions enable row level security;
 create policy "Users manage own questions"
   on public.security_questions for all
   using (auth.uid() = profile_id);
-

@@ -49,32 +49,31 @@ class AppScaffold extends StatelessWidget {
       backgroundColor: AppColors.surfaceGrey,
       floatingActionButton: floatingActionButton,
       appBar: AppBar(
-        backgroundColor: AppColors.surface,
+        backgroundColor: AppColors.surfaceGrey,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
         automaticallyImplyLeading: false,
         leading: showBack
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: AppColors.textPrimary),
-                onPressed: () {
-                  if (context.canPop()) {
-                    context.pop();
-                  } else {
-                    context.go('/');
-                  }
-                },
+            ? Container(
+                margin: const EdgeInsets.only(left: 8),
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.textPrimary),
+                  onPressed: () {
+                    if (context.canPop()) {
+                      context.pop();
+                    } else {
+                      context.go('/');
+                    }
+                  },
+                ),
               )
             : null,
         title: Text(
           title,
-          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.5),
         ),
         actions: actions,
-        bottom: const PreferredSize(
-          preferredSize: Size.fromHeight(1),
-          child: Divider(height: 1, color: AppColors.border),
-        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(

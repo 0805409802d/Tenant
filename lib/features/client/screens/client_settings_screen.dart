@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/constants/constants_theme_color.dart';
 import '../../../shared/widgets/app_widgets.dart';
 
-/// Ajustes del cliente: solo foto de perfil.
-/// El cliente no gestiona empresa, link, QR ni colores.
 class ClientSettingsScreen extends StatefulWidget {
-  const ClientSettingsScreen({super.key});
+  const ClientSettingsScreen({super.key, required this.tenantSlug});
+  final String tenantSlug;
 
   @override
   State<ClientSettingsScreen> createState() => _ClientSettingsScreenState();
@@ -12,18 +14,39 @@ class ClientSettingsScreen extends StatefulWidget {
 
 class _ClientSettingsScreenState extends State<ClientSettingsScreen>
     with SingleTickerProviderStateMixin {
-
+  Color _primaryColor = const Color(0xFF0097A7);
+  bool _loadingTheme = true;
   bool _savingPhoto = false;
 
   late AnimationController _animCtrl;
-  late Animation<double>   _fadeAnim;
+  late Animation<double> _fadeAnim;
 
   @override
   void initState() {
     super.initState();
     _animCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 500));
     _fadeAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut);
-    _animCtrl.forward();
+    _loadTheme();
+  }
+
+  Future<void> _loadTheme() async {
+    try {
+      final res = await Supabase.instance.client
+          .from('tenants')
+          .select('primary_color')
+          .eq('slug', widget.tenantSlug)
+          .maybeSingle();
+
+      if (res != null && res['primary_color'] != null) {
+        final hex = (res['primary_color'] as String).replaceAll('#', '');
+        _primaryColor = Color(int.parse('FF$hex', radix: 16));
+      }
+    } catch (_) {}
+    
+    if (mounted) {
+      setState(() => _loadingTheme = false);
+      _animCtrl.forward();
+    }
   }
 
   @override
@@ -34,18 +57,30 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (_loadingTheme) {
+      return const Scaffold(
+        backgroundColor: AppColors.surfaceGrey,
+        body: Center(child: CircularProgressIndicator(color: AppColors.textSecondary, strokeWidth: 2)),
+      );
+    }
+
     return Scaffold(
-      backgroundColor: AppColors.greyLight,
+      backgroundColor: AppColors.surfaceGrey,
       appBar: AppBar(
-        backgroundColor: AppColors.white,
+        backgroundColor: AppColors.surface,
         elevation: 0,
         centerTitle: false,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: AppColors.black),
-          onPressed: () => Navigator.of(context).maybePop(),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: AppColors.textPrimary),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/');
+            }
+          },
         ),
-        title: const Text('Ajustes', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.black)),
-        bottom: const PreferredSize(preferredSize: Size.fromHeight(1), child: Divider(height: 1, color: AppColors.greyBorder)),
+        title: const Text('Ajustes de cuenta', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
       ),
       body: FadeTransition(
         opacity: _fadeAnim,
@@ -56,38 +91,67 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen>
             children: [
               // Header
               Row(children: [
-                Container(width: 4, height: 28, decoration: BoxDecoration(color: AppColors.blue, borderRadius: BorderRadius.circular(2))),
+                Container(width: 4, height: 28, decoration: BoxDecoration(color: _primaryColor, borderRadius: BorderRadius.circular(2))),
                 const SizedBox(width: 12),
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: const [
-                  Text('Mi perfil', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.black)),
-                  Text('Personaliza cómo te ven los negocios', style: TextStyle(fontSize: 13, color: AppColors.greyText)),
+                  Text('Mi perfil', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+                  Text('Personaliza cómo te ven los negocios', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
                 ]),
               ]),
               const SizedBox(height: 24),
 
               // Foto de perfil
-              SectionCard(
-                title: 'Foto de perfil',
-                icon: Icons.person_outline_rounded,
-                subtitle: 'Visible en tus pedidos y perfil',
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.border),
+                  boxShadow: [BoxShadow(color: AppColors.overlay(0.04), blurRadius: 16, offset: const Offset(0, 4))],
+                ),
                 child: Column(
                   children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(color: AppColors.tint(_primaryColor), borderRadius: BorderRadius.circular(10)),
+                          child: Icon(Icons.person_outline_rounded, color: _primaryColor, size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Foto de perfil', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                              Text('Visible en tus pedidos', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
                     // Avatar centrado
                     Center(
                       child: Stack(
                         children: [
                           CircleAvatar(
                             radius: 52,
-                            backgroundColor: AppColors.greyBorder,
-                            child: const Icon(Icons.person_rounded, size: 52, color: AppColors.greyText),
+                            backgroundColor: AppColors.surfaceGrey,
+                            child: const Icon(Icons.person_rounded, size: 52, color: AppColors.textSecondary),
                           ),
                           Positioned(
-                            right: 2, bottom: 2,
+                            right: 0, bottom: 0,
                             child: GestureDetector(
                               onTap: () {}, // TODO: image picker
                               child: Container(
-                                width: 30, height: 30,
-                                decoration: const BoxDecoration(color: AppColors.blue, shape: BoxShape.circle),
+                                width: 34, height: 34,
+                                decoration: BoxDecoration(
+                                  color: _primaryColor,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: AppColors.white, width: 3),
+                                  boxShadow: [BoxShadow(color: AppColors.overlay(0.1), blurRadius: 4, offset: const Offset(0, 2))],
+                                ),
                                 child: const Icon(Icons.camera_alt_outlined, size: 16, color: AppColors.white),
                               ),
                             ),
@@ -98,17 +162,20 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen>
                     const SizedBox(height: 16),
                     const Text(
                       'Sin foto de perfil',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.black),
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 4),
                     const Text(
                       'JPG o PNG, máximo 2MB',
-                      style: TextStyle(fontSize: 13, color: AppColors.greyText),
+                      style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 20),
-                    AppButton(label: 'Cambiar foto', onPressed: () {}, isLoading: _savingPhoto),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      child: AppButton(label: 'Cambiar foto', onPressed: () {}, isLoading: _savingPhoto, color: _primaryColor),
+                    ),
                   ],
                 ),
               ),

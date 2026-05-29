@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/constants/constants_theme_color.dart';
 import '../../../core/services/auth_service.dart';
+import '../../../core/services/tenant_service.dart';
 import '../../../core/services/worker_email_service.dart';
+import '../../../shared/theme/tenant_theme_provider.dart';
 import '../../../shared/widgets/app_widgets.dart';
+import '../../../shared/widgets/app_components.dart';
 
 class ManagementSecurityScreen extends StatefulWidget {
   const ManagementSecurityScreen({super.key});
@@ -24,6 +29,7 @@ class _ManagementSecurityScreenState extends State<ManagementSecurityScreen>
   bool _savingPass     = false;
   String? _passFeedback;
   bool _passIsError = true;
+  double _passStrength = 0.0;
 
   // ── Cambiar email
   final _newEmailCtrl     = TextEditingController();
@@ -49,23 +55,18 @@ class _ManagementSecurityScreenState extends State<ManagementSecurityScreen>
   bool _savingQuestions   = false;
   String? _questionsFeedback;
   bool _questionsIsError  = true;
+  bool _questionsConfigured = false;
 
   // ── Workers
-  bool _showWorkerModal = false;
-  final _wFirstCtrl    = TextEditingController();
-  final _wLastCtrl     = TextEditingController();
-  final _wEmailCtrl    = TextEditingController();
-  final _wPassCtrl     = TextEditingController();
-  bool _obscureWorkerPass = true;
-  bool _savingWorker   = false;
+  List<Map<String, dynamic>> _workers = [];
+  bool _isWorker = false;
   String? _workerFeedback;
-  bool _workerIsError  = true;
+  bool _workerIsError = true;
 
   // Datos de Base de Datos
   final _db = Supabase.instance.client;
   String? _tenantId;
   String? _tenantSlug;
-  List<Map<String, dynamic>> _workers = [];
 
   late AnimationController _animCtrl;
   late Animation<double>   _fadeAnim;
@@ -76,19 +77,35 @@ class _ManagementSecurityScreenState extends State<ManagementSecurityScreen>
     _animCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 500));
     _fadeAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut);
     _animCtrl.forward();
+    
+    _newPassCtrl.addListener(_updatePassStrength);
     _loadData();
+  }
+
+  void _updatePassStrength() {
+    final pass = _newPassCtrl.text;
+    double strength = 0;
+    if (pass.length > 5) strength += 0.3;
+    if (pass.length > 8) strength += 0.3;
+    if (RegExp(r'[A-Z]').hasMatch(pass)) strength += 0.2;
+    if (RegExp(r'[0-9]').hasMatch(pass)) strength += 0.2;
+    setState(() => _passStrength = strength.clamp(0.0, 1.0));
   }
 
   Future<void> _loadData() async {
     final uid = _db.auth.currentUser?.id;
     if (uid == null) return;
 
-    final tenant = await _db.from('tenants').select('id, slug').eq('owner_id', uid).maybeSingle();
+    final tenant = await TenantService.getCurrentUserTenant();
     if (tenant != null) {
       _tenantId = tenant['id'];
       _tenantSlug = tenant['slug'];
       
-      final workers = await WorkerEmailService.getWorkers(_tenantId!);
+      final isWorker = await TenantService.isCurrentUserWorker();
+      List<Map<String, dynamic>> workers = [];
+      if (!isWorker) {
+        workers = await WorkerEmailService.getWorkers(_tenantId!);
+      }
       final questions = await _db.from('security_questions').select().eq('profile_id', uid).maybeSingle();
 
       if (mounted) {
@@ -99,8 +116,12 @@ class _ManagementSecurityScreenState extends State<ManagementSecurityScreen>
           _a2Ctrl.text = questions['answer_2'] ?? '';
           _q3Ctrl.text = questions['question_3'] ?? '';
           _a3Ctrl.text = questions['answer_3'] ?? '';
+          _questionsConfigured = _q1Ctrl.text.isNotEmpty;
         }
-        setState(() => _workers = workers);
+        setState(() {
+          _isWorker = isWorker;
+          _workers = workers;
+        });
       }
     }
   }
@@ -108,12 +129,12 @@ class _ManagementSecurityScreenState extends State<ManagementSecurityScreen>
   @override
   void dispose() {
     _animCtrl.dispose();
+    _newPassCtrl.removeListener(_updatePassStrength);
     for (final c in [
       _currentPassCtrl, _newPassCtrl, _confirmPassCtrl,
       _newEmailCtrl, _confirmEmailCtrl,
       _newPhoneCtrl, _confirmPhoneCtrl,
       _q1Ctrl, _a1Ctrl, _q2Ctrl, _a2Ctrl, _q3Ctrl, _a3Ctrl,
-      _wFirstCtrl, _wLastCtrl, _wEmailCtrl, _wPassCtrl,
     ]) { c.dispose(); }
     super.dispose();
   }
@@ -138,6 +159,7 @@ class _ManagementSecurityScreenState extends State<ManagementSecurityScreen>
     });
     if (result.success) {
       _currentPassCtrl.clear(); _newPassCtrl.clear(); _confirmPassCtrl.clear();
+      _passStrength = 0;
     }
   }
 
@@ -190,61 +212,35 @@ class _ManagementSecurityScreenState extends State<ManagementSecurityScreen>
       _savingQuestions   = false;
       _questionsFeedback = result.success ? 'Preguntas de seguridad guardadas.' : result.error;
       _questionsIsError  = !result.success;
+      if (result.success) _questionsConfigured = true;
     });
   }
 
-  Future<void> _createWorker() async {
-    if ([_wFirstCtrl, _wLastCtrl, _wEmailCtrl, _wPassCtrl]
-        .any((c) => c.text.trim().isEmpty)) {
-      setState(() { _workerFeedback = 'Completa todos los campos del trabajador.'; _workerIsError = true; });
-      return;
-    }
-    if (_workers.length >= 2) {
-      setState(() { _workerFeedback = 'Ya tienes el máximo de 2 trabajadores.'; _workerIsError = true; });
-      return;
-    }
-    if (_tenantId == null || _tenantSlug == null) {
-      setState(() { _workerFeedback = 'No se encontró la información del negocio.'; _workerIsError = true; });
-      return;
-    }
-    
-    setState(() { _savingWorker = true; _workerFeedback = null; });
-    
-    final result = await WorkerEmailService.createWorker(
-      firstName: _wFirstCtrl.text.trim(),
-      lastName: _wLastCtrl.text.trim(),
-      email: _wEmailCtrl.text.trim(),
-      password: _wPassCtrl.text.trim(),
-      tenantId: _tenantId!,
-      managerTenantSlug: _tenantSlug!,
+  void _showWorkerModal() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _WorkerFormSheet(
+        tenantId: _tenantId!,
+        tenantSlug: _tenantSlug!,
+        onSaved: () {
+          Navigator.pop(context);
+          _loadData();
+        },
+      ),
     );
-    
-    if (!mounted) return;
-    
-    setState(() {
-      _savingWorker = false;
-      _workerFeedback = result.success ? 'Trabajador creado correctamente.' : result.error;
-      _workerIsError  = !result.success;
-    });
-
-    if (result.success) {
-      _showWorkerModal = false;
-      _wFirstCtrl.clear(); _wLastCtrl.clear(); _wEmailCtrl.clear(); _wPassCtrl.clear();
-      _loadData();
-    }
   }
 
   Future<void> _deleteWorker(int index) async {
     final worker = _workers[index];
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Eliminar trabajador'),
-        content: Text('¿Seguro que deseas eliminar a ${worker['first_name']}?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
-          TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('Eliminar', style: TextStyle(color: Colors.red))),
-        ],
+      builder: (c) => AppConfirmDialog(
+        title: 'Eliminar trabajador',
+        content: '¿Seguro que deseas eliminar a ${worker['first_name']}?',
+        confirmLabel: 'Eliminar',
+        isDestructive: true,
       ),
     );
 
@@ -259,105 +255,110 @@ class _ManagementSecurityScreenState extends State<ManagementSecurityScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.greyLight,
-      appBar: _buildAppBar(),
-      body: Stack(
-        children: [
-          FadeTransition(
-            opacity: _fadeAnim,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildPageHeader(),
-                  const SizedBox(height: 24),
-
-                  // Contraseña
-                  SectionCard(
-                    title: 'Cambiar contraseña',
-                    icon: Icons.lock_outline_rounded,
-                    accentColor: const Color(0xFF6C47FF),
-                    child: _buildPasswordSection(),
+      backgroundColor: AppColors.surfaceGrey,
+      appBar: AppBar(
+        backgroundColor: AppColors.surface,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: AppColors.textPrimary),
+          onPressed: () => context.go('/'),
+        ),
+        title: const Text('Seguridad', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+      ),
+      body: FadeTransition(
+        opacity: _fadeAnim,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Worker context card
+              if (_isWorker) ...[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: AppColors.accentPurple.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.accentPurple.withValues(alpha: 0.25)),
                   ),
-                  const SizedBox(height: 16),
-
-                  // Email
-                  SectionCard(
-                    title: 'Cambiar correo electrónico',
-                    icon: Icons.mail_outline_rounded,
-                    child: _buildEmailSection(),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.accentPurple.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.info_outline_rounded, color: AppColors.accentPurple, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Tu cuenta personal', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                            SizedBox(height: 4),
+                            Text(
+                              'Aquí puedes actualizar tu contraseña, correo, teléfono y preguntas de seguridad. Estos cambios solo afectan a tu cuenta de trabajador.',
+                              style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-
-                  // Teléfono
-                  SectionCard(
-                    title: 'Cambiar número de teléfono',
-                    icon: Icons.phone_outlined,
-                    accentColor: const Color(0xFF00B37E),
-                    child: _buildPhoneSection(),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Preguntas de seguridad
-                  SectionCard(
-                    title: 'Recuperación de cuenta',
-                    icon: Icons.shield_outlined,
-                    subtitle: '3 preguntas de seguridad',
-                    accentColor: const Color(0xFFE53935),
-                    child: _buildQuestionsSection(),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Workers
-                  SectionCard(
-                    title: 'Trabajadores',
-                    icon: Icons.group_outlined,
-                    subtitle: 'Máximo 2 cuentas',
-                    accentColor: const Color(0xFF0097A7),
-                    child: _buildWorkersSection(),
-                  ),
-                  const SizedBox(height: 32),
-                ],
+                ),
+              ],
+              _CollapsibleSection(
+                title: 'Contraseña',
+                icon: Icons.lock_outline_rounded,
+                accentColor: AppColors.primary,
+                initiallyExpanded: true,
+                child: _buildPasswordSection(),
               ),
-            ),
+              const SizedBox(height: 16),
+              _CollapsibleSection(
+                title: 'Correo electrónico',
+                icon: Icons.mail_outline_rounded,
+                accentColor: AppColors.accentTeal,
+                child: _buildEmailSection(),
+              ),
+              const SizedBox(height: 16),
+              _CollapsibleSection(
+                title: 'Teléfono',
+                icon: Icons.phone_outlined,
+                accentColor: AppColors.accentGreen,
+                child: _buildPhoneSection(),
+              ),
+              const SizedBox(height: 16),
+              _CollapsibleSection(
+                title: 'Preguntas de seguridad',
+                icon: Icons.shield_outlined,
+                accentColor: AppColors.error,
+                statusChip: _questionsConfigured 
+                  ? const AppChip(label: 'Configurado', color: AppColors.success)
+                  : const AppChip(label: 'Pendiente', color: AppColors.accentAmber),
+                child: _buildQuestionsSection(),
+              ),
+              const SizedBox(height: 16),
+              if (!_isWorker) ...[
+                _CollapsibleSection(
+                  title: 'Trabajadores',
+                  icon: Icons.group_outlined,
+                  accentColor: AppColors.accentAmber,
+                  statusChip: AppChip(label: '${_workers.length}/2', color: AppColors.primary),
+                  child: _buildWorkersSection(),
+                ),
+                const SizedBox(height: 32),
+              ],
+            ],
           ),
-
-          // Modal de nuevo trabajador
-          if (_showWorkerModal) _buildWorkerModal(),
-        ],
+        ),
       ),
     );
   }
-
-  PreferredSizeWidget _buildAppBar() => AppBar(
-        backgroundColor: AppColors.white,
-        elevation: 0,
-        centerTitle: false,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: AppColors.black),
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
-        title: const Text('Seguridad', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.black)),
-        bottom: const PreferredSize(
-          preferredSize: Size.fromHeight(1),
-          child: Divider(height: 1, color: AppColors.greyBorder),
-        ),
-      );
-
-  Widget _buildPageHeader() => Row(
-        children: [
-          Container(width: 4, height: 28, decoration: BoxDecoration(color: const Color(0xFF6C47FF), borderRadius: BorderRadius.circular(2))),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
-              Text('Seguridad', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.black)),
-              Text('Protege y actualiza los datos de tu cuenta', style: TextStyle(fontSize: 13, color: AppColors.greyText)),
-            ],
-          ),
-        ],
-      );
 
   // ── Cambiar contraseña
   Widget _buildPasswordSection() => Column(
@@ -365,10 +366,45 @@ class _ManagementSecurityScreenState extends State<ManagementSecurityScreen>
           _passField('Contraseña actual', _currentPassCtrl, _obscureCurrent, () => setState(() => _obscureCurrent = !_obscureCurrent)),
           const SizedBox(height: 12),
           _passField('Contraseña nueva', _newPassCtrl, _obscureNew, () => setState(() => _obscureNew = !_obscureNew)),
+          const SizedBox(height: 8),
+          
+          // Password Strength indicator
+          if (_newPassCtrl.text.isNotEmpty)
+            Row(
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: LinearProgressIndicator(
+                      value: _passStrength,
+                      minHeight: 4,
+                      backgroundColor: AppColors.border,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        _passStrength < 0.4 ? AppColors.error :
+                        _passStrength < 0.8 ? AppColors.accentAmber :
+                        AppColors.success
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  _passStrength < 0.4 ? 'Débil' : _passStrength < 0.8 ? 'Media' : 'Fuerte',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: _passStrength < 0.4 ? AppColors.error :
+                           _passStrength < 0.8 ? AppColors.accentAmber :
+                           AppColors.success
+                  ),
+                ),
+              ],
+            ),
+
           const SizedBox(height: 12),
           _passField('Confirmar nueva contraseña', _confirmPassCtrl, _obscureConfirm, () => setState(() => _obscureConfirm = !_obscureConfirm)),
-          if (_passFeedback != null) ...[const SizedBox(height: 10), AppFeedbackBanner(message: _passFeedback!, isError: _passIsError)],
-          const SizedBox(height: 14),
+          if (_passFeedback != null) ...[const SizedBox(height: 16), AppFeedbackBanner(message: _passFeedback!, isError: _passIsError)],
+          const SizedBox(height: 24),
           AppButton(label: 'Actualizar contraseña', onPressed: _changePassword, isLoading: _savingPass),
         ],
       );
@@ -384,7 +420,7 @@ class _ManagementSecurityScreenState extends State<ManagementSecurityScreen>
             icon: Icons.lock_outline_rounded,
             obscure: obscure,
             suffixIcon: IconButton(
-              icon: Icon(obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: AppColors.greyText, size: 18),
+              icon: Icon(obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: AppColors.textSecondary, size: 18),
               onPressed: toggle,
             ),
           ),
@@ -402,8 +438,8 @@ class _ManagementSecurityScreenState extends State<ManagementSecurityScreen>
           const AppLabel('Confirmar correo nuevo'),
           const SizedBox(height: 6),
           AppTextField(controller: _confirmEmailCtrl, hint: 'nuevo@correo.com', icon: Icons.mail_outline_rounded, keyboardType: TextInputType.emailAddress),
-          if (_emailFeedback != null) ...[const SizedBox(height: 10), AppFeedbackBanner(message: _emailFeedback!, isError: _emailIsError)],
-          const SizedBox(height: 14),
+          if (_emailFeedback != null) ...[const SizedBox(height: 16), AppFeedbackBanner(message: _emailFeedback!, isError: _emailIsError)],
+          const SizedBox(height: 24),
           AppButton(label: 'Actualizar correo', onPressed: _changeEmail, isLoading: _savingEmail),
         ],
       );
@@ -419,9 +455,9 @@ class _ManagementSecurityScreenState extends State<ManagementSecurityScreen>
           const AppLabel('Confirmar número nuevo'),
           const SizedBox(height: 6),
           AppTextField(controller: _confirmPhoneCtrl, hint: '+593 99 000 0000', icon: Icons.phone_outlined, keyboardType: TextInputType.phone),
-          if (_phoneFeedback != null) ...[const SizedBox(height: 10), AppFeedbackBanner(message: _phoneFeedback!, isError: _phoneIsError)],
-          const SizedBox(height: 14),
-          AppButton(label: 'Actualizar teléfono', onPressed: _changePhone, isLoading: _savingPhone, color: const Color(0xFF00B37E)),
+          if (_phoneFeedback != null) ...[const SizedBox(height: 16), AppFeedbackBanner(message: _phoneFeedback!, isError: _phoneIsError)],
+          const SizedBox(height: 24),
+          AppButton(label: 'Actualizar teléfono', onPressed: _changePhone, isLoading: _savingPhone),
         ],
       );
 
@@ -437,7 +473,7 @@ class _ManagementSecurityScreenState extends State<ManagementSecurityScreen>
       children: [
         const Text(
           'Estas respuestas te permitirán recuperar el acceso a tu cuenta si olvidas tu contraseña.',
-          style: TextStyle(fontSize: 12, color: AppColors.greyText, height: 1.5),
+          style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5),
         ),
         const SizedBox(height: 16),
         ...pairs.expand((p) => [
@@ -446,10 +482,10 @@ class _ManagementSecurityScreenState extends State<ManagementSecurityScreen>
           const SizedBox(height: 8),
           AppLabel(p.$4), const SizedBox(height: 6),
           AppTextField(controller: p.$2, hint: 'Tu respuesta', icon: Icons.short_text_rounded),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
         ]),
-        if (_questionsFeedback != null) ...[AppFeedbackBanner(message: _questionsFeedback!, isError: _questionsIsError), const SizedBox(height: 10)],
-        AppButton(label: 'Guardar preguntas', onPressed: _saveQuestions, isLoading: _savingQuestions, color: const Color(0xFFE53935)),
+        if (_questionsFeedback != null) ...[AppFeedbackBanner(message: _questionsFeedback!, isError: _questionsIsError), const SizedBox(height: 16)],
+        AppButton(label: 'Guardar preguntas', onPressed: _saveQuestions, isLoading: _savingQuestions),
       ],
     );
   }
@@ -459,133 +495,239 @@ class _ManagementSecurityScreenState extends State<ManagementSecurityScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (_workers.isEmpty)
-            const Text('Aún no tienes trabajadores. Puedes crear hasta 2 cuentas.',
-                style: TextStyle(fontSize: 13, color: AppColors.greyText, height: 1.5)),
+            const Padding(
+              padding: EdgeInsets.only(bottom: 16),
+              child: Text('Aún no tienes trabajadores. Puedes crear hasta 2 cuentas.',
+                  style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5)),
+            ),
 
           ..._workers.asMap().entries.map((e) => _workerTile(e.key, e.value)),
 
-          if (_workerFeedback != null && !_showWorkerModal) ...[
-            const SizedBox(height: 10),
+          if (_workerFeedback != null) ...[
+            const SizedBox(height: 16),
             AppFeedbackBanner(message: _workerFeedback!, isError: _workerIsError),
           ],
 
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           if (_workers.length < 2)
             AppButton(
               label: 'Agregar trabajador',
-              onPressed: () => setState(() { _showWorkerModal = true; _workerFeedback = null; }),
-              color: const Color(0xFF0097A7),
+              onPressed: _showWorkerModal,
+              color: AppColors.primary,
             ),
         ],
       );
 
   Widget _workerTile(int index, Map<String, dynamic> worker) => Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: AppColors.greyLight,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppColors.greyBorder),
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+          boxShadow: [BoxShadow(color: AppColors.overlay(0.02), blurRadius: 4, offset: const Offset(0, 2))],
         ),
         child: Row(
           children: [
-            Container(
-              width: 38, height: 38,
-              decoration: BoxDecoration(color: const Color(0xFF0097A7).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
-              child: const Icon(Icons.person_rounded, color: Color(0xFF0097A7), size: 20),
-            ),
+            AppAvatar(name: '${worker['first_name']} ${worker['last_name']}', radius: 20),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('${worker['first_name']} ${worker['last_name']}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.black)),
-                  Text(worker['email'] ?? '', style: const TextStyle(fontSize: 12, color: AppColors.greyText)),
+                  Text('${worker['first_name']} ${worker['last_name']}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                  Text(worker['email'] ?? '', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                 ],
               ),
             ),
+            const AppChip(label: 'Activo', color: AppColors.success),
+            const SizedBox(width: 8),
             IconButton(
-              icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFE53935), size: 20),
+              icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error, size: 20),
               onPressed: () => _deleteWorker(index),
               tooltip: 'Eliminar trabajador',
             ),
           ],
         ),
       );
+}
 
-  // ── Modal de nuevo trabajador
-  Widget _buildWorkerModal() => GestureDetector(
-        onTap: () => setState(() => _showWorkerModal = false),
-        child: Container(
-          color: AppColors.black.withValues(alpha: 0.45),
-          child: Center(
-            child: GestureDetector(
-              onTap: () {}, // evitar que el tap cierre el modal
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 24),
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: AppColors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [BoxShadow(color: AppColors.black.withValues(alpha: 0.12), blurRadius: 32, offset: const Offset(0, 8))],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+class _CollapsibleSection extends StatelessWidget {
+  const _CollapsibleSection({
+    required this.title,
+    required this.icon,
+    required this.child,
+    required this.accentColor,
+    this.statusChip,
+    this.initiallyExpanded = false,
+  });
+
+  final String title;
+  final IconData icon;
+  final Widget child;
+  final Color accentColor;
+  final Widget? statusChip;
+  final bool initiallyExpanded;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+        boxShadow: [BoxShadow(color: AppColors.overlay(0.02), blurRadius: 8, offset: const Offset(0, 2))],
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: initiallyExpanded,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          childrenPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: AppColors.tint(accentColor, opacity: 0.1), borderRadius: BorderRadius.circular(8)),
+            child: Icon(icon, color: accentColor, size: 20),
+          ),
+          title: Row(
+            children: [
+              Expanded(child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary))),
+              if (statusChip != null) statusChip!,
+            ],
+          ),
+          children: [child],
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkerFormSheet extends StatefulWidget {
+  final String tenantId;
+  final String tenantSlug;
+  final VoidCallback onSaved;
+
+  const _WorkerFormSheet({required this.tenantId, required this.tenantSlug, required this.onSaved});
+
+  @override
+  State<_WorkerFormSheet> createState() => _WorkerFormSheetState();
+}
+
+class _WorkerFormSheetState extends State<_WorkerFormSheet> {
+  final _wFirstCtrl    = TextEditingController();
+  final _wLastCtrl     = TextEditingController();
+  final _wEmailCtrl    = TextEditingController();
+  final _wPassCtrl     = TextEditingController();
+  bool _obscureWorkerPass = true;
+  bool _savingWorker   = false;
+  String? _workerFeedback;
+  bool _workerIsError  = true;
+
+  Future<void> _createWorker() async {
+    if ([_wFirstCtrl, _wLastCtrl, _wEmailCtrl, _wPassCtrl]
+        .any((c) => c.text.trim().isEmpty)) {
+      setState(() { _workerFeedback = 'Completa todos los campos del trabajador.'; _workerIsError = true; });
+      return;
+    }
+    
+    setState(() { _savingWorker = true; _workerFeedback = null; });
+    
+    final result = await WorkerEmailService.createWorker(
+      firstName: _wFirstCtrl.text.trim(),
+      lastName: _wLastCtrl.text.trim(),
+      email: _wEmailCtrl.text.trim(),
+      password: _wPassCtrl.text.trim(),
+      tenantId: widget.tenantId,
+      managerTenantSlug: widget.tenantSlug,
+    );
+    
+    if (!mounted) return;
+    
+    setState(() {
+      _savingWorker = false;
+      _workerFeedback = result.success ? 'Trabajador creado correctamente.' : result.error;
+      _workerIsError  = !result.success;
+    });
+
+    if (result.success) {
+      widget.onSaved();
+    }
+  }
+
+  @override
+  void dispose() {
+    _wFirstCtrl.dispose();
+    _wLastCtrl.dispose();
+    _wEmailCtrl.dispose();
+    _wPassCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 12, bottom: 12),
+            width: 40, height: 4,
+            decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
+          ),
+          Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+              left: 24, right: 24,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Nuevo trabajador', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                const SizedBox(height: 8),
+                const Text('El e-mail debe usar el dominio de tu tienda: nombre@tutienda.com',
+                    style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5)),
+                const SizedBox(height: 24),
+                Row(
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Nuevo trabajador', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.black)),
-                        IconButton(icon: const Icon(Icons.close_rounded, color: AppColors.greyText), onPressed: () => setState(() => _showWorkerModal = false)),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    const Text('El e-mail debe usar el dominio de tu tienda: nombre@tutienda.com',
-                        style: TextStyle(fontSize: 12, color: AppColors.greyText, height: 1.5)),
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          const AppLabel('Nombre'), const SizedBox(height: 6),
-                          AppTextField(controller: _wFirstCtrl, hint: 'María', icon: Icons.person_outline_rounded),
-                        ])),
-                        const SizedBox(width: 12),
-                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          const AppLabel('Apellido'), const SizedBox(height: 6),
-                          AppTextField(controller: _wLastCtrl, hint: 'García', icon: Icons.person_outline_rounded),
-                        ])),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    const AppLabel('Correo'), const SizedBox(height: 6),
-                    AppTextField(controller: _wEmailCtrl, hint: 'maria@tutienda.com', icon: Icons.mail_outline_rounded, keyboardType: TextInputType.emailAddress),
-                    const SizedBox(height: 12),
-                    const AppLabel('Contraseña'), const SizedBox(height: 6),
-                    AppTextField(
-                      controller: _wPassCtrl,
-                      hint: '••••••••',
-                      icon: Icons.lock_outline_rounded,
-                      obscure: _obscureWorkerPass,
-                      suffixIcon: IconButton(
-                        icon: Icon(_obscureWorkerPass ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: AppColors.greyText, size: 18),
-                        onPressed: () => setState(() => _obscureWorkerPass = !_obscureWorkerPass),
-                      ),
-                    ),
-                    if (_workerFeedback != null) ...[const SizedBox(height: 10), AppFeedbackBanner(message: _workerFeedback!, isError: _workerIsError)],
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        Expanded(child: AppButton(label: 'Cancelar', onPressed: () => setState(() => _showWorkerModal = false), color: AppColors.greyBorder, textColor: AppColors.black)),
-                        const SizedBox(width: 12),
-                        Expanded(child: AppButton(label: 'Crear', onPressed: _createWorker, isLoading: _savingWorker, color: const Color(0xFF0097A7))),
-                      ],
-                    ),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const AppLabel('Nombre'), const SizedBox(height: 6),
+                      AppTextField(controller: _wFirstCtrl, hint: 'María', icon: Icons.person_outline_rounded),
+                    ])),
+                    const SizedBox(width: 12),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const AppLabel('Apellido'), const SizedBox(height: 6),
+                      AppTextField(controller: _wLastCtrl, hint: 'García', icon: Icons.person_outline_rounded),
+                    ])),
                   ],
                 ),
-              ),
+                const SizedBox(height: 16),
+                const AppLabel('Correo'), const SizedBox(height: 6),
+                AppTextField(controller: _wEmailCtrl, hint: 'maria@tutienda.com', icon: Icons.mail_outline_rounded, keyboardType: TextInputType.emailAddress),
+                const SizedBox(height: 16),
+                const AppLabel('Contraseña temporal'), const SizedBox(height: 6),
+                AppTextField(
+                  controller: _wPassCtrl,
+                  hint: '••••••••',
+                  icon: Icons.lock_outline_rounded,
+                  obscure: _obscureWorkerPass,
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscureWorkerPass ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: AppColors.textSecondary, size: 18),
+                    onPressed: () => setState(() => _obscureWorkerPass = !_obscureWorkerPass),
+                  ),
+                ),
+                if (_workerFeedback != null) ...[const SizedBox(height: 16), AppFeedbackBanner(message: _workerFeedback!, isError: _workerIsError)],
+                const SizedBox(height: 32),
+                AppButton(label: 'Crear trabajador', onPressed: _createWorker, isLoading: _savingWorker),
+              ],
             ),
           ),
-        ),
-      );
+        ],
+      ),
+    );
+  }
 }

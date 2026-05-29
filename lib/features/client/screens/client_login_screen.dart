@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/constants/constants_theme_color.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../shared/widgets/app_widgets.dart';
@@ -16,7 +17,10 @@ class ClientLoginScreen extends StatefulWidget {
 class _ClientLoginScreenState extends State<ClientLoginScreen>
     with SingleTickerProviderStateMixin {
   _View _view = _View.credentials;
-  static const _accent = Color(0xFF0097A7); // Teal — identidad client
+  
+  // Tema dinámico
+  Color _primaryColor = const Color(0xFF0097A7);
+  bool _loadingTheme = true;
 
   final _emailCtrl = TextEditingController();
   final _passCtrl  = TextEditingController();
@@ -39,13 +43,35 @@ class _ClientLoginScreenState extends State<ClientLoginScreen>
     super.initState();
     _animCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
     _fadeAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut);
-    _animCtrl.forward();
+    _loadTheme();
+  }
+
+  Future<void> _loadTheme() async {
+    try {
+      final res = await Supabase.instance.client
+          .from('tenants')
+          .select('primary_color')
+          .eq('slug', widget.tenantSlug)
+          .maybeSingle();
+
+      if (res != null && res['primary_color'] != null) {
+        final hex = (res['primary_color'] as String).replaceAll('#', '');
+        _primaryColor = Color(int.parse('FF$hex', radix: 16));
+      }
+    } catch (_) {}
+    
+    if (mounted) {
+      setState(() => _loadingTheme = false);
+      _animCtrl.forward();
+    }
   }
 
   @override
   void dispose() {
     _animCtrl.dispose();
-    for (final c in [_emailCtrl, _passCtrl, _recoverEmailCtrl, _a1Ctrl, _a2Ctrl, _a3Ctrl]) c.dispose();
+    for (final c in [_emailCtrl, _passCtrl, _recoverEmailCtrl, _a1Ctrl, _a2Ctrl, _a3Ctrl]) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -88,35 +114,76 @@ class _ClientLoginScreenState extends State<ClientLoginScreen>
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: AppColors.surfaceGrey,
-    body: Center(
-      child: FadeTransition(
-        opacity: _fadeAnim,
-        child: Container(
-          width: 420, margin: const EdgeInsets.symmetric(horizontal: 24),
-          decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border),
-            boxShadow: [BoxShadow(color: AppColors.overlay(0.06), blurRadius: 32, offset: const Offset(0, 8))]),
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 300),
-            child: Padding(key: ValueKey(_view), padding: const EdgeInsets.all(40), child: switch (_view) {
-              _View.credentials => _creds(),
-              _View.enterEmail  => _enterEmail(),
-              _View.questions   => _questions(),
-              _View.sent        => _sent(),
-            }),
+  Widget build(BuildContext context) {
+    if (_loadingTheme) {
+      return const Scaffold(
+        backgroundColor: AppColors.surfaceGrey,
+        body: Center(child: CircularProgressIndicator(color: AppColors.textSecondary, strokeWidth: 2)),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: AppColors.surfaceGrey,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: AppColors.textPrimary),
+          onPressed: () => context.go('/'),
+        ),
+      ),
+      body: Center(
+        child: FadeTransition(
+          opacity: _fadeAnim,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 400),
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: AppColors.border),
+                boxShadow: [BoxShadow(color: AppColors.overlay(0.04), blurRadius: 24, offset: const Offset(0, 8))],
+              ),
+              child: AnimatedSize(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: Tween<Offset>(begin: const Offset(0, 0.05), end: Offset.zero).animate(animation),
+                      child: child,
+                    ),
+                  ),
+                  child: Padding(
+                    key: ValueKey(_view),
+                    padding: const EdgeInsets.all(32),
+                    child: switch (_view) {
+                      _View.credentials => _creds(),
+                      _View.enterEmail  => _enterEmail(),
+                      _View.questions   => _questions(),
+                      _View.sent        => _sent(),
+                    },
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   Widget _creds() => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Container(width: 32, height: 3, decoration: BoxDecoration(color: _accent, borderRadius: BorderRadius.circular(2))),
+    Container(width: 40, height: 4, decoration: BoxDecoration(color: _primaryColor, borderRadius: BorderRadius.circular(2))),
     const SizedBox(height: 24),
-    Text('Mi cuenta', style: TextStyle(fontFamily: 'Georgia', fontSize: 26, fontWeight: FontWeight.bold, color: AppColors.textPrimary, height: 1.2)),
-    const SizedBox(height: 4),
-    Text('Accede a ${widget.tenantSlug}', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+    Text('Bienvenido a ${widget.tenantSlug}', style: const TextStyle(fontFamily: 'Georgia', fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary, height: 1.2)),
+    const SizedBox(height: 6),
+    const Text('Inicia sesión para continuar comprando.', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
     const SizedBox(height: 32),
     const AppLabel('Correo electrónico'), const SizedBox(height: 6),
     AppTextField(controller: _emailCtrl, hint: 'correo@dominio.com', icon: Icons.mail_outline_rounded, keyboardType: TextInputType.emailAddress),
@@ -124,57 +191,85 @@ class _ClientLoginScreenState extends State<ClientLoginScreen>
     const AppLabel('Contraseña'), const SizedBox(height: 6),
     AppTextField(controller: _passCtrl, hint: '••••••••', icon: Icons.lock_outline_rounded, obscure: _obscure,
       suffixIcon: IconButton(icon: Icon(_obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: AppColors.textSecondary, size: 18), onPressed: () => setState(() => _obscure = !_obscure))),
-    if (_error != null) ...[const SizedBox(height: 12), AppFeedbackBanner(message: _error!)],
+    if (_error != null) ...[const SizedBox(height: 16), AppFeedbackBanner(message: _error!)],
     const SizedBox(height: 24),
-    AppButton(label: 'Iniciar sesión', onPressed: _login, isLoading: _loading, color: _accent),
+    SizedBox(
+      width: double.infinity,
+      child: AppButton(label: 'Entrar', onPressed: _login, isLoading: _loading, color: _primaryColor),
+    ),
+    const SizedBox(height: 24),
+    Center(
+      child: GestureDetector(
+        onTap: () => setState(() { _view = _View.enterEmail; _recoverError = null; }),
+        child: Text('Olvidé mi contraseña', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _primaryColor)),
+      ),
+    ),
     const SizedBox(height: 16),
-    Center(child: GestureDetector(onTap: () => setState(() { _view = _View.enterEmail; _recoverError = null; }),
-      child: Text('Recuperar cuenta', style: TextStyle(fontSize: 13, color: _accent, decoration: TextDecoration.underline)))),
-    const SizedBox(height: 8),
-    Center(child: GestureDetector(onTap: () => context.go('/register'),
-      child: Text('¿Primera vez aquí? Crear cuenta', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)))),
+    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+      const Text('¿No tienes cuenta?', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+      const SizedBox(width: 4),
+      GestureDetector(
+        onTap: () => context.go('/register'),
+        child: Text('Regístrate aquí', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _primaryColor)),
+      ),
+    ]),
   ]);
 
   Widget _enterEmail() => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-    _back(), const SizedBox(height: 20),
-    Text('Recuperar acceso', style: TextStyle(fontFamily: 'Georgia', fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-    const SizedBox(height: 6), Text('Ingresa el correo de tu cuenta.', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+    _back(), const SizedBox(height: 24),
+    const Text('Recuperar acceso', style: TextStyle(fontFamily: 'Georgia', fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+    const SizedBox(height: 6), const Text('Ingresa el correo de tu cuenta. Te pediremos responder tus preguntas de seguridad.', style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4)),
     const SizedBox(height: 24), const AppLabel('Correo electrónico'), const SizedBox(height: 6),
     AppTextField(controller: _recoverEmailCtrl, hint: 'correo@dominio.com', icon: Icons.mail_outline_rounded, keyboardType: TextInputType.emailAddress),
-    if (_recoverError != null) ...[const SizedBox(height: 10), AppFeedbackBanner(message: _recoverError!)],
-    const SizedBox(height: 20),
-    AppButton(label: 'Continuar', onPressed: _getQuestions, isLoading: _loadingQ, color: _accent),
+    if (_recoverError != null) ...[const SizedBox(height: 16), AppFeedbackBanner(message: _recoverError!)],
+    const SizedBox(height: 24),
+    SizedBox(
+      width: double.infinity,
+      child: AppButton(label: 'Continuar', onPressed: _getQuestions, isLoading: _loadingQ, color: _primaryColor),
+    ),
   ]);
 
   Widget _questions() => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-    _back(onTap: () => setState(() { _view = _View.enterEmail; _recoverError = null; })), const SizedBox(height: 20),
-    Text('Preguntas de seguridad', style: TextStyle(fontFamily: 'Georgia', fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-    const SizedBox(height: 20),
+    _back(onTap: () => setState(() { _view = _View.enterEmail; _recoverError = null; })), const SizedBox(height: 24),
+    const Text('Preguntas de seguridad', style: TextStyle(fontFamily: 'Georgia', fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+    const SizedBox(height: 6), const Text('Responde las siguientes preguntas para verificar tu identidad.', style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4)),
+    const SizedBox(height: 24),
     ...[(_q1!, _a1Ctrl), (_q2!, _a2Ctrl), (_q3!, _a3Ctrl)].expand((p) => [
-      Text(p.$1, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)), const SizedBox(height: 6),
-      AppTextField(controller: p.$2, hint: 'Tu respuesta', icon: Icons.short_text_rounded), const SizedBox(height: 14),
+      Text(p.$1, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary)), const SizedBox(height: 6),
+      AppTextField(controller: p.$2, hint: 'Tu respuesta', icon: Icons.short_text_rounded), const SizedBox(height: 16),
     ]),
-    if (_recoverError != null) ...[AppFeedbackBanner(message: _recoverError!), const SizedBox(height: 10)],
-    AppButton(label: 'Validar y recuperar', onPressed: _validateAnswers, isLoading: _loadingV, color: _accent),
+    if (_recoverError != null) ...[AppFeedbackBanner(message: _recoverError!), const SizedBox(height: 16)],
+    SizedBox(
+      width: double.infinity,
+      child: AppButton(label: 'Validar y recuperar', onPressed: _validateAnswers, isLoading: _loadingV, color: _primaryColor),
+    ),
   ]);
 
   Widget _sent() => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.center, children: [
-    Container(width: 64, height: 64, decoration: BoxDecoration(color: AppColors.successBg, shape: BoxShape.circle),
+    Container(width: 64, height: 64, decoration: BoxDecoration(color: AppColors.tint(AppColors.success), shape: BoxShape.circle),
       child: const Icon(Icons.mark_email_read_outlined, color: AppColors.success, size: 30)),
     const SizedBox(height: 20),
-    Text('¡Correo enviado!', style: TextStyle(fontFamily: 'Georgia', fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+    const Text('¡Correo enviado!', style: TextStyle(fontFamily: 'Georgia', fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
     const SizedBox(height: 8),
-    Text('Revisa tu bandeja. Te enviamos un link para restablecer tu contraseña.',
+    const Text('Revisa tu bandeja de entrada o spam. Te hemos enviado un enlace para restablecer tu contraseña.',
       textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5)),
-    const SizedBox(height: 24),
-    AppButton(label: 'Volver al login', onPressed: () => setState(() { _view = _View.credentials; _recoverError = null; }), color: _accent),
+    const SizedBox(height: 32),
+    SizedBox(
+      width: double.infinity,
+      child: AppButton(label: 'Volver al login', onPressed: () => setState(() { _view = _View.credentials; _recoverError = null; }), color: _primaryColor),
+    ),
   ]);
 
   Widget _back({VoidCallback? onTap}) => GestureDetector(
     onTap: onTap ?? () => setState(() { _view = _View.credentials; _recoverError = null; }),
     child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(Icons.arrow_back_ios_new_rounded, size: 14, color: AppColors.textSecondary), const SizedBox(width: 4),
-      Text('Volver', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+      Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(color: AppColors.surfaceGrey, borderRadius: BorderRadius.circular(8)),
+        child: const Icon(Icons.arrow_back_ios_new_rounded, size: 14, color: AppColors.textSecondary),
+      ),
+      const SizedBox(width: 8),
+      const Text('Volver', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
     ]),
   );
 }

@@ -8,6 +8,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/services/tenant_service.dart';
 import '../../../shared/theme/tenant_theme_provider.dart';
 import '../../../shared/widgets/app_widgets.dart';
 
@@ -43,12 +44,10 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
   late AnimationController _animCtrl;
   late Animation<double>   _fadeAnim;
 
-  // Paleta de colores predefinidos para la interfaz
   static const _palette = [
-    Color(0xFF1E6BFF), Color(0xFF0A0A0A), Color(0xFF6C47FF),
-    Color(0xFF00B37E), Color(0xFFE53935), Color(0xFFFF8C00),
-    Color(0xFF0097A7), Color(0xFF8D6E63), Color(0xFF546E7A),
-    Color(0xFF1B5E20),
+    Color(0xFF1E6BFF), Color(0xFF6C47FF), Color(0xFF00B37E),
+    Color(0xFFE53935), Color(0xFFFF8C00), Color(0xFF0097A7),
+    Color(0xFF0A0A0A),
   ];
 
   @override
@@ -65,13 +64,12 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
       final uid = _db.auth.currentUser?.id;
       if (uid == null) return;
 
-      final tenant = await _db.from('tenants').select().eq('owner_id', uid).maybeSingle();
+      final tenant = await TenantService.getCurrentUserTenant();
       if (tenant != null) {
         _tenantId = tenant['id'];
         _businessNameController.text = tenant['business_name'] ?? '';
         _linkController.text = tenant['link_url'] ?? 'https://${tenant['slug']}.quinindews.com';
         
-        // Parse primary_color si existe
         if (tenant['primary_color'] != null) {
           final hex = (tenant['primary_color'] as String).replaceAll('#', '');
           _selectedColor = Color(int.parse('FF$hex', radix: 16));
@@ -125,21 +123,21 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
     }
   }
 
-  Future<void> _saveColor() async {
+  Future<void> _saveColor(Color color) async {
     if (_tenantId == null) return;
-    setState(() => _savingColor = true);
+    setState(() {
+      _selectedColor = color;
+      _savingColor = true;
+    });
     
-    // Convertir Color a HEX (#RRGGBB)
-    final hex = '#${_selectedColor.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
+    final hex = '#${color.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
     
     try {
       await _db.from('tenants').update({'primary_color': hex}).eq('id', _tenantId!);
       if (mounted) {
-        TenantThemeProvider.of(context).updateColor(_selectedColor);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Color actualizado exitosamente')));
+        TenantThemeProvider.of(context).updateColor(color);
       }
     } catch (e) {
-      print('Error en _saveColor: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al actualizar el color')));
       }
@@ -154,7 +152,7 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
       SnackBar(
         content: const Text('¡Link copiado al portapapeles!'),
         behavior: SnackBarBehavior.floating,
-        backgroundColor: AppColors.black,
+        backgroundColor: AppColors.textPrimary,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         duration: const Duration(seconds: 2),
       ),
@@ -172,10 +170,16 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
     setState(() => _savingPhoto = true);
     try {
       final bytes = await xfile.readAsBytes();
-      final ext = xfile.name.split('.').last;
-      final path = '$uid/avatar_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final ext = xfile.name.split('.').last.toLowerCase();
+      final finalExt = (ext == 'png' || ext == 'jpg' || ext == 'jpeg') ? ext : 'png';
+      final contentType = finalExt == 'png' ? 'image/png' : 'image/jpeg';
+      final path = '$uid/avatar_${DateTime.now().millisecondsSinceEpoch}.$finalExt';
       
-      await _db.storage.from('avatars').uploadBinary(path, bytes);
+      await _db.storage.from('avatars').uploadBinary(
+        path, 
+        bytes, 
+        fileOptions: FileOptions(contentType: contentType),
+      );
       final publicUrl = _db.storage.from('avatars').getPublicUrl(path);
       
       await _db.from('profiles').update({'avatar_url': publicUrl}).eq('id', uid);
@@ -185,10 +189,8 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
           _avatarUrl = '$publicUrl?t=${DateTime.now().millisecondsSinceEpoch}';
           _savingPhoto = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Foto de perfil actualizada exitosamente')));
       }
     } catch (e) {
-      print('Error en _pickAndUploadPhoto: $e');
       if (mounted) {
         setState(() => _savingPhoto = false);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al subir la foto de perfil')));
@@ -206,10 +208,16 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
     setState(() => _savingLogo = true);
     try {
       final bytes = await xfile.readAsBytes();
-      final ext = xfile.name.split('.').last;
-      final path = '$_tenantId/logo_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final ext = xfile.name.split('.').last.toLowerCase();
+      final finalExt = (ext == 'png' || ext == 'jpg' || ext == 'jpeg') ? ext : 'png';
+      final contentType = finalExt == 'png' ? 'image/png' : 'image/jpeg';
+      final path = '$_tenantId/logo_${DateTime.now().millisecondsSinceEpoch}.$finalExt';
       
-      await _db.storage.from('logos').uploadBinary(path, bytes);
+      await _db.storage.from('logos').uploadBinary(
+        path, 
+        bytes, 
+        fileOptions: FileOptions(contentType: contentType),
+      );
       final publicUrl = _db.storage.from('logos').getPublicUrl(path);
       
       await _db.from('tenants').update({'logo_url': publicUrl}).eq('id', _tenantId!);
@@ -220,10 +228,8 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
           _savingLogo = false;
         });
         TenantThemeProvider.of(context).updateLogo(_logoUrl!);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Logo actualizado exitosamente')));
       }
     } catch (e) {
-      print('Error en _pickAndUploadLogo: $e');
       if (mounted) {
         setState(() => _savingLogo = false);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error al subir el logo del negocio')));
@@ -278,30 +284,37 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.greyLight,
-      appBar: _buildAppBar(),
+      backgroundColor: AppColors.surfaceGrey,
+      appBar: AppBar(
+        backgroundColor: AppColors.surfaceGrey,
+        elevation: 0,
+        centerTitle: false,
+        title: const Text(
+          'Ajustes',
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.5)
+        ),
+      ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.blue))
-          : FadeTransition(
-              opacity: _fadeAnim,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          ? ListView(
+              padding: const EdgeInsets.all(20),
+              children: List.generate(4, (_) => const Padding(
+                padding: EdgeInsets.only(bottom: 16),
+                child: AppShimmerLoader(height: 120, borderRadius: 16),
+              )),
+            )
+          : Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 800),
+                child: FadeTransition(
+                  opacity: _fadeAnim,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildPageHeader(),
+                    _buildPhotoSection(),
                     const SizedBox(height: 24),
 
-                    // ── Foto de perfil ──────────────────────
-                    SectionCard(
-                      title: 'Foto de perfil',
-                      icon: Icons.person_outline_rounded,
-                      subtitle: 'Visible en tu panel de gestión',
-                      child: _buildPhotoSection(),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // ── Nombre del negocio ──────────────────
                     SectionCard(
                       title: 'Nombre del negocio',
                       icon: Icons.storefront_outlined,
@@ -310,7 +323,6 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
                     ),
                     const SizedBox(height: 16),
 
-                    // ── Color de la interfaz ────────────────
                     SectionCard(
                       title: 'Color de la interfaz',
                       icon: Icons.palette_outlined,
@@ -319,7 +331,6 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
                     ),
                     const SizedBox(height: 16),
 
-                    // ── Logo ────────────────────────────────
                     SectionCard(
                       title: 'Logo del negocio',
                       icon: Icons.image_outlined,
@@ -328,119 +339,64 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
                     ),
                     const SizedBox(height: 16),
 
-                    // ── Link del sitio ──────────────────────
                     SectionCard(
-                      title: 'Link de tu sitio',
+                      title: 'Link y Código QR',
                       icon: Icons.link_rounded,
-                      subtitle: 'Compártelo o úsalo en Google Business',
-                      child: _buildLinkSection(),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // ── QR ─────────────────────────────────
-                    SectionCard(
-                      title: 'Código QR',
-                      icon: Icons.qr_code_2_rounded,
-                      subtitle: 'Descarga el QR de tu página en PDF',
-                      child: _buildQrSection(),
+                      subtitle: 'Comparte tu página con tus clientes',
+                      child: _buildLinkAndQrSection(),
                     ),
                     const SizedBox(height: 32),
                   ],
                 ),
               ),
             ),
+          ),
+        ),
     );
   }
 
-  PreferredSizeWidget _buildAppBar() => AppBar(
-        backgroundColor: AppColors.white,
-        elevation: 0,
-        centerTitle: false,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: AppColors.black),
-          onPressed: () {
-            if (context.canPop()) {
-              context.pop();
-            } else {
-              context.go('/');
-            }
-          },
-        ),
-        title: const Text(
-          'Ajustes',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.black),
-        ),
-        bottom: const PreferredSize(
-          preferredSize: Size.fromHeight(1),
-          child: Divider(height: 1, color: AppColors.greyBorder),
-        ),
-      );
-
-  Widget _buildPageHeader() => Row(
-        children: [
-          Container(width: 4, height: 28, decoration: BoxDecoration(color: AppColors.blue, borderRadius: BorderRadius.circular(2))),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
-              Text('Personalización', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.black)),
-              Text('Configura cómo se ve tu negocio', style: TextStyle(fontSize: 13, color: AppColors.greyText)),
-            ],
-          ),
-        ],
-      );
-
-  // ── SECCIONES ──────────────────────────────────────────────
-
-  Widget _buildPhotoSection() => Row(
-        children: [
-          Stack(
-            children: [
-              CircleAvatar(
-                radius: 36,
-                backgroundColor: AppColors.greyBorder,
-                backgroundImage: _avatarUrl != null ? NetworkImage(_avatarUrl!) : null,
-                child: _avatarUrl == null ? const Icon(Icons.person_rounded, size: 36, color: AppColors.greyText) : null,
-              ),
-              Positioned(
-                right: 0, bottom: 0,
-                child: GestureDetector(
-                  onTap: _pickAndUploadPhoto,
-                  child: Container(
-                    width: 26, height: 26,
-                    decoration: const BoxDecoration(color: AppColors.blue, shape: BoxShape.circle),
-                    child: const Icon(Icons.camera_alt_outlined, size: 13, color: AppColors.white),
+  Widget _buildPhotoSection() => Center(
+        child: Column(
+          children: [
+            GestureDetector(
+              onTap: _pickAndUploadPhoto,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Container(
+                    width: 100, height: 100,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.border, width: 2),
+                      image: _avatarUrl != null ? DecorationImage(image: NetworkImage(_avatarUrl!), fit: BoxFit.cover) : null,
+                      color: AppColors.surface,
+                    ),
+                    child: _avatarUrl == null ? const Icon(Icons.person_rounded, size: 40, color: AppColors.textSecondary) : null,
                   ),
-                ),
+                  if (_savingPhoto)
+                    Container(
+                      width: 100, height: 100,
+                      decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.overlay(0.5)),
+                      child: const Center(child: CircularProgressIndicator(color: AppColors.white)),
+                    )
+                  else
+                    Container(
+                      width: 100, height: 100,
+                      decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.overlay(0.3)),
+                      child: const Center(child: Icon(Icons.camera_alt_outlined, color: AppColors.white, size: 28)),
+                    ),
+                ],
               ),
-            ],
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(_avatarUrl != null ? 'Foto de perfil subida' : 'Sin foto de perfil', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.black)),
-                const SizedBox(height: 2),
-                const Text('JPG o PNG, máximo 2MB', style: TextStyle(fontSize: 12, color: AppColors.greyText)),
-                const SizedBox(height: 10),
-                AppButton(
-                  label: 'Cambiar foto',
-                  onPressed: _pickAndUploadPhoto,
-                  isLoading: _savingPhoto,
-                  fullWidth: false,
-                ),
-              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 12),
+            const Text('Toca para cambiar tu foto de perfil', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+          ],
+        ),
       );
 
   Widget _buildNameSection() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const AppLabel('Nuevo nombre'),
-          const SizedBox(height: 6),
           AppTextField(
             controller: _businessNameController,
             hint: 'Ej: Mi Restaurante',
@@ -450,7 +406,7 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
             const SizedBox(height: 10),
             AppFeedbackBanner(message: _nameFeedback!, isError: _nameIsError),
           ],
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           AppButton(label: 'Guardar nombre', onPressed: _saveName, isLoading: _savingName),
         ],
       );
@@ -458,64 +414,78 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
   Widget _buildColorSection() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const AppLabel('Color principal de tu página'),
-          const SizedBox(height: 12),
-          Row(
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
             children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: _selectedColor,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.greyBorder, width: 2),
-                  boxShadow: [
-                    BoxShadow(color: _selectedColor.withValues(alpha: 0.4), blurRadius: 8, offset: const Offset(0, 2))
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: AppButton(
-                  label: 'Elegir un color personalizado',
-                  onPressed: _showColorPickerDialog,
-                  fullWidth: false,
-                  color: AppColors.white,
-                  textColor: AppColors.black,
+              ..._palette.map((color) => GestureDetector(
+                    onTap: () => _saveColor(color),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: _selectedColor.value == color.value ? AppColors.textPrimary : Colors.transparent,
+                          width: 3,
+                        ),
+                        boxShadow: [
+                          if (_selectedColor.value == color.value)
+                            BoxShadow(color: color.withValues(alpha: 0.4), blurRadius: 8, offset: const Offset(0, 2))
+                        ],
+                      ),
+                      child: _selectedColor.value == color.value
+                          ? const Icon(Icons.check_rounded, color: AppColors.white, size: 20)
+                          : null,
+                    ),
+                  )),
+              GestureDetector(
+                onTap: _showColorPickerDialog,
+                child: Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceGrey,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.border, width: 2),
+                  ),
+                  child: const Icon(Icons.colorize_rounded, color: AppColors.textSecondary, size: 20),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          AppButton(label: 'Aplicar color', onPressed: _saveColor, isLoading: _savingColor),
         ],
       );
 
   void _showColorPickerDialog() {
     showDialog(
       context: context,
-      builder: (BuildContext context) {
+      builder: (context) {
+        Color tempColor = _selectedColor;
         return AlertDialog(
-          title: const Text('Selecciona un color'),
+          title: const Text('Color personalizado', style: TextStyle(fontWeight: FontWeight.bold)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           content: SingleChildScrollView(
             child: ColorPicker(
-              pickerColor: _selectedColor,
-              onColorChanged: (Color color) {
-                setState(() => _selectedColor = color);
-              },
-              pickerAreaHeightPercent: 0.8,
+              pickerColor: tempColor,
+              onColorChanged: (c) => tempColor = c,
               enableAlpha: false,
               displayThumbColor: true,
-              paletteType: PaletteType.hsvWithHue,
               pickerAreaBorderRadius: BorderRadius.circular(10),
             ),
           ),
-          actions: <Widget>[
+          actions: [
             TextButton(
-              child: const Text('Aceptar', style: TextStyle(color: AppColors.blue)),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar', style: TextStyle(color: AppColors.textSecondary)),
+            ),
+            ElevatedButton(
               onPressed: () {
-                Navigator.of(context).pop();
+                Navigator.pop(context);
+                _saveColor(tempColor);
               },
+              style: ElevatedButton.styleFrom(backgroundColor: TenantThemeProvider.of(context).primaryColor, foregroundColor: AppColors.white),
+              child: const Text('Aplicar'),
             ),
           ],
         );
@@ -526,37 +496,39 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
   Widget _buildLogoSection() => Row(
         children: [
           Container(
-            width: 72, height: 72,
+            width: 80, height: 80,
             decoration: BoxDecoration(
-              color: AppColors.greyBorder,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.greyBorder),
+              color: AppColors.surfaceGrey,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.border),
+              image: _logoUrl != null ? DecorationImage(image: NetworkImage(_logoUrl!), fit: BoxFit.contain) : null,
             ),
-            child: _logoUrl != null 
-              ? ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(_logoUrl!, fit: BoxFit.cover))
-              : const Icon(Icons.image_outlined, color: AppColors.greyText, size: 28),
+            child: _logoUrl == null ? const Icon(Icons.image_outlined, color: AppColors.textSecondary, size: 32) : null,
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(_logoUrl != null ? 'Logo subido' : 'Sin logo', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.black)),
-                const SizedBox(height: 2),
-                const Text('PNG con fondo transparente recomendado', style: TextStyle(fontSize: 12, color: AppColors.greyText)),
-                const SizedBox(height: 10),
-                AppButton(label: 'Subir logo', onPressed: _pickAndUploadLogo, isLoading: _savingLogo, fullWidth: false),
+                Text(_logoUrl != null ? 'Logo subido' : 'Sin logo', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                const SizedBox(height: 4),
+                const Text('PNG transparente recomendado', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                const SizedBox(height: 12),
+                AppButton(
+                  label: 'Subir logo',
+                  onPressed: _pickAndUploadLogo,
+                  isLoading: _savingLogo,
+                  fullWidth: false,
+                ),
               ],
             ),
           ),
         ],
       );
 
-  Widget _buildLinkSection() => Column(
+  Widget _buildLinkAndQrSection() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const AppLabel('Tu link único'),
-          const SizedBox(height: 6),
           Row(
             children: [
               Expanded(
@@ -567,44 +539,50 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
                   enabled: false,
                 ),
               ),
-              const SizedBox(width: 10),
-              SizedBox(
-                height: 46,
-                child: ElevatedButton.icon(
+              const SizedBox(width: 8),
+              Container(
+                decoration: BoxDecoration(
+                  color: TenantThemeProvider.of(context).primaryColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: IconButton(
+                  icon: Icon(Icons.copy_rounded, color: TenantThemeProvider.of(context).primaryColor),
                   onPressed: _copyLink,
-                  icon: const Icon(Icons.copy_rounded, size: 16),
-                  label: const Text('Copiar', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.blue,
-                    foregroundColor: AppColors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
+                  tooltip: 'Copiar link',
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          const Text(
-            'Al presionar Copiar, el link se guarda en tu portapapeles listo para compartir.',
-            style: TextStyle(fontSize: 12, color: AppColors.greyText),
-          ),
-        ],
-      );
-
-  Widget _buildQrSection() => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Descarga el código QR de tu página en formato PDF para imprimirlo y colocarlo en tu local.',
-            style: TextStyle(fontSize: 13, color: AppColors.greyText, height: 1.5),
-          ),
-          const SizedBox(height: 14),
-          AppButton(
-            label: 'Descargar QR en PDF',
-            onPressed: _generateAndDownloadQr,
-            color: AppColors.blue,
-          ),
+          const SizedBox(height: 24),
+          if (_linkController.text.isNotEmpty)
+            Center(
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppColors.border),
+                      boxShadow: [BoxShadow(color: AppColors.overlay(0.04), blurRadius: 12)],
+                    ),
+                    child: QrImageView(
+                      data: _linkController.text,
+                      version: QrVersions.auto,
+                      size: 160.0,
+                      eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: AppColors.black),
+                      dataModuleStyle: const QrDataModuleStyle(dataModuleShape: QrDataModuleShape.square, color: AppColors.black),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  AppButton(
+                    label: 'Descargar QR',
+                    onPressed: _generateAndDownloadQr,
+                    icon: Icons.download_rounded,
+                  ),
+                ],
+              ),
+            ),
         ],
       );
 }

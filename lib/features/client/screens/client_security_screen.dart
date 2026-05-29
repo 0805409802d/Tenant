@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/constants/constants_theme_color.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../shared/widgets/app_widgets.dart';
 
-/// Seguridad del cliente: contraseña, correo, teléfono y preguntas de seguridad.
-/// No tiene sección de trabajadores (exclusiva de management).
 class ClientSecurityScreen extends StatefulWidget {
-  const ClientSecurityScreen({super.key});
+  const ClientSecurityScreen({super.key, required this.tenantSlug});
+  final String tenantSlug;
 
   @override
   State<ClientSecurityScreen> createState() => _ClientSecurityScreenState();
@@ -13,6 +15,9 @@ class ClientSecurityScreen extends StatefulWidget {
 
 class _ClientSecurityScreenState extends State<ClientSecurityScreen>
     with SingleTickerProviderStateMixin {
+  
+  Color _primaryColor = const Color(0xFF0097A7);
+  bool _loadingTheme = true;
 
   // Contraseña
   final _currentPassCtrl = TextEditingController();
@@ -22,6 +27,7 @@ class _ClientSecurityScreenState extends State<ClientSecurityScreen>
   bool _savingPass = false;
   String? _passFeedback;
   bool _passIsError = true;
+  double _passStrength = 0.0;
 
   // Email
   final _newEmailCtrl     = TextEditingController();
@@ -44,6 +50,7 @@ class _ClientSecurityScreenState extends State<ClientSecurityScreen>
   bool _savingQuestions = false;
   String? _questionsFeedback;
   bool _questionsIsError = true;
+  bool _questionsConfigured = false;
 
   late AnimationController _animCtrl;
   late Animation<double>   _fadeAnim;
@@ -53,7 +60,46 @@ class _ClientSecurityScreenState extends State<ClientSecurityScreen>
     super.initState();
     _animCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 500));
     _fadeAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut);
-    _animCtrl.forward();
+    
+    _newPassCtrl.addListener(() {
+      final text = _newPassCtrl.text;
+      double strength = 0;
+      if (text.length >= 8) strength += 0.4;
+      if (text.contains(RegExp(r'[A-Z]'))) strength += 0.2;
+      if (text.contains(RegExp(r'[0-9]'))) strength += 0.2;
+      if (text.contains(RegExp(r'[!@#\$&*~]'))) strength += 0.2;
+      setState(() => _passStrength = strength);
+    });
+
+    _loadTheme();
+  }
+
+  Future<void> _loadTheme() async {
+    try {
+      final db = Supabase.instance.client;
+      final res = await db
+          .from('tenants')
+          .select('primary_color')
+          .eq('slug', widget.tenantSlug)
+          .maybeSingle();
+
+      if (res != null && res['primary_color'] != null) {
+        final hex = (res['primary_color'] as String).replaceAll('#', '');
+        _primaryColor = Color(int.parse('FF$hex', radix: 16));
+      }
+
+      // Check if user has security questions
+      final uid = db.auth.currentUser?.id;
+      if (uid != null) {
+        final qRes = await db.from('security_questions').select('id').eq('profile_id', uid).maybeSingle();
+        _questionsConfigured = qRes != null;
+      }
+    } catch (_) {}
+    
+    if (mounted) {
+      setState(() => _loadingTheme = false);
+      _animCtrl.forward();
+    }
   }
 
   @override
@@ -70,7 +116,7 @@ class _ClientSecurityScreenState extends State<ClientSecurityScreen>
     setState(() { _savingPass = true; _passFeedback = null; });
     final r = await AuthService.changePassword(currentPassword: _currentPassCtrl.text.trim(), newPassword: _newPassCtrl.text.trim());
     if (!mounted) return;
-    setState(() { _savingPass = false; _passFeedback = r.success ? 'Contraseña actualizada.' : r.error; _passIsError = !r.success; });
+    setState(() { _savingPass = false; _passFeedback = r.success ? 'Contraseña actualizada correctamente.' : r.error; _passIsError = !r.success; });
     if (r.success) { _currentPassCtrl.clear(); _newPassCtrl.clear(); _confirmPassCtrl.clear(); }
   }
 
@@ -81,7 +127,7 @@ class _ClientSecurityScreenState extends State<ClientSecurityScreen>
     setState(() { _savingEmail = true; _emailFeedback = null; });
     final r = await AuthService.changeEmail(newEmail: _newEmailCtrl.text.trim());
     if (!mounted) return;
-    setState(() { _savingEmail = false; _emailFeedback = r.success ? 'Correo actualizado. Confirma en tu bandeja.' : r.error; _emailIsError = !r.success; });
+    setState(() { _savingEmail = false; _emailFeedback = r.success ? 'Correo actualizado. Por favor, confirma en tu bandeja de entrada.' : r.error; _emailIsError = !r.success; });
     if (r.success) { _newEmailCtrl.clear(); _confirmEmailCtrl.clear(); }
   }
 
@@ -92,13 +138,13 @@ class _ClientSecurityScreenState extends State<ClientSecurityScreen>
     setState(() { _savingPhone = true; _phoneFeedback = null; });
     final r = await AuthService.changePhone(newPhone: _newPhoneCtrl.text.trim());
     if (!mounted) return;
-    setState(() { _savingPhone = false; _phoneFeedback = r.success ? 'Teléfono actualizado.' : r.error; _phoneIsError = !r.success; });
+    setState(() { _savingPhone = false; _phoneFeedback = r.success ? 'Teléfono actualizado correctamente.' : r.error; _phoneIsError = !r.success; });
     if (r.success) { _newPhoneCtrl.clear(); _confirmPhoneCtrl.clear(); }
   }
 
   Future<void> _saveQuestions() async {
     if ([_q1Ctrl,_a1Ctrl,_q2Ctrl,_a2Ctrl,_q3Ctrl,_a3Ctrl].any((c) => c.text.trim().isEmpty)) {
-      setState(() { _questionsFeedback = 'Completa todas las preguntas y respuestas.'; _questionsIsError = true; }); return;
+      setState(() { _questionsFeedback = 'Por favor, completa todas las preguntas y respuestas.'; _questionsIsError = true; }); return;
     }
     setState(() { _savingQuestions = true; _questionsFeedback = null; });
     final r = await AuthService.saveSecurityQuestions(
@@ -107,18 +153,40 @@ class _ClientSecurityScreenState extends State<ClientSecurityScreen>
       question3: _q3Ctrl.text.trim(), answer3: _a3Ctrl.text.trim(),
     );
     if (!mounted) return;
-    setState(() { _savingQuestions = false; _questionsFeedback = r.success ? 'Preguntas guardadas.' : r.error; _questionsIsError = !r.success; });
+    setState(() { 
+      _savingQuestions = false; 
+      _questionsFeedback = r.success ? 'Preguntas de seguridad guardadas correctamente.' : r.error; 
+      _questionsIsError = !r.success; 
+      if (r.success) _questionsConfigured = true;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_loadingTheme) {
+      return const Scaffold(
+        backgroundColor: AppColors.surfaceGrey,
+        body: Center(child: CircularProgressIndicator(color: AppColors.textSecondary, strokeWidth: 2)),
+      );
+    }
+
     return Scaffold(
-      backgroundColor: AppColors.greyLight,
+      backgroundColor: AppColors.surfaceGrey,
       appBar: AppBar(
-        backgroundColor: AppColors.white, elevation: 0, centerTitle: false,
-        leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: AppColors.black), onPressed: () => Navigator.of(context).maybePop()),
-        title: const Text('Seguridad', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.black)),
-        bottom: const PreferredSize(preferredSize: Size.fromHeight(1), child: Divider(height: 1, color: AppColors.greyBorder)),
+        backgroundColor: AppColors.surface,
+        elevation: 0,
+        centerTitle: false,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: AppColors.textPrimary),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/');
+            }
+          },
+        ),
+        title: const Text('Seguridad', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
       ),
       body: FadeTransition(
         opacity: _fadeAnim,
@@ -127,23 +195,49 @@ class _ClientSecurityScreenState extends State<ClientSecurityScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(children: [
-                Container(width: 4, height: 28, decoration: BoxDecoration(color: const Color(0xFF6C47FF), borderRadius: BorderRadius.circular(2))),
-                const SizedBox(width: 12),
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: const [
-                  Text('Seguridad', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.black)),
-                  Text('Mantén tu cuenta protegida', style: TextStyle(fontSize: 13, color: AppColors.greyText)),
-                ]),
-              ]),
-              const SizedBox(height: 24),
-
-              SectionCard(title: 'Cambiar contraseña', icon: Icons.lock_outline_rounded, accentColor: const Color(0xFF6C47FF), child: _buildPasswordSection()),
+              _CollapsibleSection(
+                title: 'Contraseña',
+                icon: Icons.lock_outline_rounded,
+                accentColor: _primaryColor,
+                initiallyExpanded: true,
+                child: _buildPasswordSection(),
+              ),
               const SizedBox(height: 16),
-              SectionCard(title: 'Cambiar correo electrónico', icon: Icons.mail_outline_rounded, child: _buildEmailSection()),
+              _CollapsibleSection(
+                title: 'Correo electrónico',
+                icon: Icons.mail_outline_rounded,
+                accentColor: AppColors.accentTeal,
+                child: _buildEmailSection(),
+              ),
               const SizedBox(height: 16),
-              SectionCard(title: 'Cambiar número de teléfono', icon: Icons.phone_outlined, accentColor: const Color(0xFF00B37E), child: _buildPhoneSection()),
+              _CollapsibleSection(
+                title: 'Teléfono',
+                icon: Icons.phone_outlined,
+                accentColor: AppColors.accentGreen,
+                child: _buildPhoneSection(),
+              ),
               const SizedBox(height: 16),
-              SectionCard(title: 'Recuperación de cuenta', icon: Icons.shield_outlined, subtitle: '3 preguntas de seguridad', accentColor: const Color(0xFFE53935), child: _buildQuestionsSection()),
+              _CollapsibleSection(
+                title: 'Preguntas de seguridad',
+                icon: Icons.shield_outlined,
+                accentColor: AppColors.error,
+                statusBadge: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _questionsConfigured ? AppColors.accentGreen.withValues(alpha: 0.1) : AppColors.accentAmber.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    _questionsConfigured ? 'Configurado' : 'Pendiente',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: _questionsConfigured ? AppColors.accentGreen : AppColors.accentAmber,
+                    ),
+                  ),
+                ),
+                child: _buildQuestionsSection(),
+              ),
               const SizedBox(height: 32),
             ],
           ),
@@ -152,61 +246,191 @@ class _ClientSecurityScreenState extends State<ClientSecurityScreen>
     );
   }
 
-  Widget _buildPasswordSection() => Column(children: [
-    _passRow('Contraseña actual', _currentPassCtrl, _obscureCurrent, () => setState(() => _obscureCurrent = !_obscureCurrent)),
-    const SizedBox(height: 12),
-    _passRow('Contraseña nueva', _newPassCtrl, _obscureNew, () => setState(() => _obscureNew = !_obscureNew)),
-    const SizedBox(height: 12),
-    _passRow('Confirmar nueva', _confirmPassCtrl, _obscureConfirm, () => setState(() => _obscureConfirm = !_obscureConfirm)),
-    if (_passFeedback != null) ...[const SizedBox(height: 10), AppFeedbackBanner(message: _passFeedback!, isError: _passIsError)],
-    const SizedBox(height: 14),
-    AppButton(label: 'Actualizar contraseña', onPressed: _changePassword, isLoading: _savingPass),
-  ]);
+  // ── Secciones
+  Widget _buildPasswordSection() => Column(
+        children: [
+          _passField('Contraseña actual', _currentPassCtrl, _obscureCurrent, () => setState(() => _obscureCurrent = !_obscureCurrent)),
+          const SizedBox(height: 12),
+          _passField('Contraseña nueva', _newPassCtrl, _obscureNew, () => setState(() => _obscureNew = !_obscureNew)),
+          const SizedBox(height: 8),
+          
+          if (_newPassCtrl.text.isNotEmpty)
+            Row(
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: LinearProgressIndicator(
+                      value: _passStrength,
+                      minHeight: 4,
+                      backgroundColor: AppColors.border,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        _passStrength < 0.4 ? AppColors.error :
+                        _passStrength < 0.8 ? AppColors.accentAmber :
+                        AppColors.success
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  _passStrength < 0.4 ? 'Débil' : _passStrength < 0.8 ? 'Media' : 'Fuerte',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: _passStrength < 0.4 ? AppColors.error :
+                           _passStrength < 0.8 ? AppColors.accentAmber :
+                           AppColors.success
+                  ),
+                ),
+              ],
+            ),
 
-  Widget _passRow(String label, TextEditingController ctrl, bool obscure, VoidCallback toggle) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [AppLabel(label), const SizedBox(height: 6),
-      AppTextField(controller: ctrl, hint: '••••••••', icon: Icons.lock_outline_rounded, obscure: obscure,
-        suffixIcon: IconButton(icon: Icon(obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: AppColors.greyText, size: 18), onPressed: toggle)),
-    ]);
+          const SizedBox(height: 12),
+          _passField('Confirmar nueva contraseña', _confirmPassCtrl, _obscureConfirm, () => setState(() => _obscureConfirm = !_obscureConfirm)),
+          if (_passFeedback != null) ...[const SizedBox(height: 16), AppFeedbackBanner(message: _passFeedback!, isError: _passIsError)],
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: AppButton(label: 'Actualizar contraseña', onPressed: _changePassword, isLoading: _savingPass, color: _primaryColor),
+          ),
+        ],
+      );
 
-  Widget _buildEmailSection() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    const AppLabel('Correo nuevo'), const SizedBox(height: 6),
-    AppTextField(controller: _newEmailCtrl, hint: 'nuevo@correo.com', icon: Icons.mail_outline_rounded, keyboardType: TextInputType.emailAddress),
-    const SizedBox(height: 12),
-    const AppLabel('Confirmar correo nuevo'), const SizedBox(height: 6),
-    AppTextField(controller: _confirmEmailCtrl, hint: 'nuevo@correo.com', icon: Icons.mail_outline_rounded, keyboardType: TextInputType.emailAddress),
-    if (_emailFeedback != null) ...[const SizedBox(height: 10), AppFeedbackBanner(message: _emailFeedback!, isError: _emailIsError)],
-    const SizedBox(height: 14),
-    AppButton(label: 'Actualizar correo', onPressed: _changeEmail, isLoading: _savingEmail),
-  ]);
+  Widget _passField(String label, TextEditingController ctrl, bool obscure, VoidCallback toggle) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AppLabel(label),
+          const SizedBox(height: 6),
+          AppTextField(
+            controller: ctrl,
+            hint: '••••••••',
+            icon: Icons.lock_outline_rounded,
+            obscure: obscure,
+            suffixIcon: IconButton(
+              icon: Icon(obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: AppColors.textSecondary, size: 18),
+              onPressed: toggle,
+            ),
+          ),
+        ],
+      );
 
-  Widget _buildPhoneSection() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    const AppLabel('Número nuevo'), const SizedBox(height: 6),
-    AppTextField(controller: _newPhoneCtrl, hint: '+593 99 000 0000', icon: Icons.phone_outlined, keyboardType: TextInputType.phone),
-    const SizedBox(height: 12),
-    const AppLabel('Confirmar número nuevo'), const SizedBox(height: 6),
-    AppTextField(controller: _confirmPhoneCtrl, hint: '+593 99 000 0000', icon: Icons.phone_outlined, keyboardType: TextInputType.phone),
-    if (_phoneFeedback != null) ...[const SizedBox(height: 10), AppFeedbackBanner(message: _phoneFeedback!, isError: _phoneIsError)],
-    const SizedBox(height: 14),
-    AppButton(label: 'Actualizar teléfono', onPressed: _changePhone, isLoading: _savingPhone, color: const Color(0xFF00B37E)),
-  ]);
+  Widget _buildEmailSection() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const AppLabel('Correo electrónico nuevo'),
+          const SizedBox(height: 6),
+          AppTextField(controller: _newEmailCtrl, hint: 'nuevo@correo.com', icon: Icons.mail_outline_rounded, keyboardType: TextInputType.emailAddress),
+          const SizedBox(height: 12),
+          const AppLabel('Confirmar correo nuevo'),
+          const SizedBox(height: 6),
+          AppTextField(controller: _confirmEmailCtrl, hint: 'nuevo@correo.com', icon: Icons.mail_outline_rounded, keyboardType: TextInputType.emailAddress),
+          if (_emailFeedback != null) ...[const SizedBox(height: 16), AppFeedbackBanner(message: _emailFeedback!, isError: _emailIsError)],
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: AppButton(label: 'Actualizar correo', onPressed: _changeEmail, isLoading: _savingEmail, color: _primaryColor),
+          ),
+        ],
+      );
+
+  Widget _buildPhoneSection() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const AppLabel('Número nuevo'),
+          const SizedBox(height: 6),
+          AppTextField(controller: _newPhoneCtrl, hint: '+593 99 000 0000', icon: Icons.phone_outlined, keyboardType: TextInputType.phone),
+          const SizedBox(height: 12),
+          const AppLabel('Confirmar número nuevo'),
+          const SizedBox(height: 6),
+          AppTextField(controller: _confirmPhoneCtrl, hint: '+593 99 000 0000', icon: Icons.phone_outlined, keyboardType: TextInputType.phone),
+          if (_phoneFeedback != null) ...[const SizedBox(height: 16), AppFeedbackBanner(message: _phoneFeedback!, isError: _phoneIsError)],
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: AppButton(label: 'Actualizar teléfono', onPressed: _changePhone, isLoading: _savingPhone, color: _primaryColor),
+          ),
+        ],
+      );
 
   Widget _buildQuestionsSection() {
-    final pairs = [(_q1Ctrl,_a1Ctrl,'Pregunta 1','Respuesta 1'),(_q2Ctrl,_a2Ctrl,'Pregunta 2','Respuesta 2'),(_q3Ctrl,_a3Ctrl,'Pregunta 3','Respuesta 3')];
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('Estas respuestas te permitirán recuperar el acceso a tu cuenta.', style: TextStyle(fontSize: 12, color: AppColors.greyText, height: 1.5)),
-      const SizedBox(height: 16),
-      ...pairs.expand((p) => [
-        AppLabel(p.$3), const SizedBox(height: 6),
-        AppTextField(controller: p.$1, hint: '¿Cuál fue tu primera mascota?', icon: Icons.help_outline_rounded),
-        const SizedBox(height: 8),
-        AppLabel(p.$4), const SizedBox(height: 6),
-        AppTextField(controller: p.$2, hint: 'Tu respuesta', icon: Icons.short_text_rounded),
-        const SizedBox(height: 14),
-      ]),
-      if (_questionsFeedback != null) ...[AppFeedbackBanner(message: _questionsFeedback!, isError: _questionsIsError), const SizedBox(height: 10)],
-      AppButton(label: 'Guardar preguntas', onPressed: _saveQuestions, isLoading: _savingQuestions, color: const Color(0xFFE53935)),
-    ]);
+    final pairs = [
+      (_q1Ctrl, _a1Ctrl, 'Pregunta 1', 'Respuesta 1'),
+      (_q2Ctrl, _a2Ctrl, 'Pregunta 2', 'Respuesta 2'),
+      (_q3Ctrl, _a3Ctrl, 'Pregunta 3', 'Respuesta 3'),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Estas respuestas te permitirán recuperar el acceso a tu cuenta si olvidas tu contraseña.',
+          style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5),
+        ),
+        const SizedBox(height: 16),
+        ...pairs.expand((p) => [
+          AppLabel(p.$3), const SizedBox(height: 6),
+          AppTextField(controller: p.$1, hint: '¿Cuál fue tu primera mascota?', icon: Icons.help_outline_rounded),
+          const SizedBox(height: 8),
+          AppLabel(p.$4), const SizedBox(height: 6),
+          AppTextField(controller: p.$2, hint: 'Tu respuesta', icon: Icons.short_text_rounded),
+          const SizedBox(height: 16),
+        ]),
+        if (_questionsFeedback != null) ...[AppFeedbackBanner(message: _questionsFeedback!, isError: _questionsIsError), const SizedBox(height: 16)],
+        SizedBox(
+          width: double.infinity,
+          child: AppButton(label: 'Guardar preguntas', onPressed: _saveQuestions, isLoading: _savingQuestions, color: _primaryColor),
+        ),
+      ],
+    );
+  }
+}
+
+class _CollapsibleSection extends StatelessWidget {
+  const _CollapsibleSection({
+    required this.title,
+    required this.icon,
+    required this.child,
+    required this.accentColor,
+    this.statusBadge,
+    this.initiallyExpanded = false,
+  });
+
+  final String title;
+  final IconData icon;
+  final Widget child;
+  final Color accentColor;
+  final Widget? statusBadge;
+  final bool initiallyExpanded;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+        boxShadow: [BoxShadow(color: AppColors.overlay(0.02), blurRadius: 8, offset: const Offset(0, 2))],
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: initiallyExpanded,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          childrenPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: AppColors.tint(accentColor, opacity: 0.1), borderRadius: BorderRadius.circular(8)),
+            child: Icon(icon, color: accentColor, size: 20),
+          ),
+          title: Row(
+            children: [
+              Expanded(child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary))),
+              if (statusBadge != null) statusBadge!,
+            ],
+          ),
+          children: [child],
+        ),
+      ),
+    );
   }
 }

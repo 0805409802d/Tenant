@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:functions_client/functions_client.dart';
 import 'auth_service.dart';
 
 /// Resultado de la validación de correo de trabajador
@@ -21,8 +22,8 @@ class WorkerEmailService {
 
   // ─────────────────────────────────────────────
   // VALIDAR FORMATO DE CORREO DE TRABAJADOR
-  // El correo debe ser: algo@nombretienda.com
-  // Retorna el slug de la tienda si es válido
+  // El correo debe ser: algo@slug.com
+  // El slug debe coincidir con el slug del tenant del manager.
   // ─────────────────────────────────────────────
   static WorkerEmailResult validateFormat(String email) {
     final parts = email.split('@');
@@ -67,27 +68,12 @@ class WorkerEmailService {
     if (formatResult.tenantSlug != managerTenantSlug) {
       return WorkerEmailResult(
         isValid: false,
-        error:
-            'El correo del trabajador debe usar el dominio de tu tienda: '
+        error: 'El correo del trabajador debe usar el dominio de tu tienda: '
             '@$managerTenantSlug.com',
       );
     }
 
-    // 3. Verificar que el correo no esté ya en uso
-    final existing = await _supabase
-        .from('profiles')
-        .select('id')
-        .eq('email', workerEmail)
-        .maybeSingle();
-
-    if (existing != null) {
-      return const WorkerEmailResult(
-        isValid: false,
-        error: 'Este correo ya está en uso. Prueba con otro.',
-      );
-    }
-
-    // 4. Obtener el tenant_id para el slug
+    // 3. Obtener el tenant_id para el slug
     final tenant = await _supabase
         .from('tenants')
         .select('id')
@@ -110,7 +96,8 @@ class WorkerEmailService {
 
   // ─────────────────────────────────────────────
   // CREAR TRABAJADOR COMPLETO
-  // Crea usuario en auth + profile + workers table
+  // Llama a la Edge Function "create-worker" para evitar
+  // que el signUp reemplace la sesión activa del manager.
   // ─────────────────────────────────────────────
   static Future<AuthResult> createWorker({
     required String firstName,
@@ -131,53 +118,32 @@ class WorkerEmailService {
         return AuthResult.fail(validation.error!);
       }
 
-      // Verificar límite de 2 trabajadores por tenant
-      final workerCount = await _supabase
-          .from('workers')
-          .select('id')
-          .eq('tenant_id', tenantId);
-
-      if (workerCount.length >= 2) {
-        return AuthResult.fail(
-            'Has alcanzado el límite de 2 trabajadores por tienda.');
-      }
-
-      // Crear usuario en Supabase Auth
-      // Nota: esto usa el Admin API en el service role,
-      // en producción esto debe ejecutarse desde un Edge Function
-      final response = await _supabase.auth.signUp(
-        email: email,
-        password: password,
+      // Llamar a la Edge Function para crear el worker sin afectar la sesión
+      final response = await _supabase.functions.invoke(
+        'create-worker',
+        body: {
+          'firstName': firstName,
+          'lastName': lastName,
+          'email': email,
+          'password': password,
+          'tenantId': tenantId,
+        },
       );
 
-      if (response.user == null) {
-        return AuthResult.fail('No se pudo crear la cuenta del trabajador.');
+      // Manejo seguro: verificamos que la respuesta sea un Map con posible error
+      final responseData = response.data;
+      if (responseData is Map<String, dynamic>) {
+        if (responseData.containsKey('error')) {
+          return AuthResult.fail(responseData['error'].toString());
+        }
+        return AuthResult.ok({
+          'worker_id': responseData['worker_id'],
+          'email': email,
+        });
+      } else {
+        // Si la respuesta no es un Map, asumimos éxito pero sin worker_id
+        return AuthResult.ok({'email': email});
       }
-
-      final workerId = response.user!.id;
-
-      // Insertar perfil del trabajador
-      await _supabase.from('profiles').insert({
-        'id': workerId,
-        'email': email,
-        'role': 'worker',
-        'first_name': firstName,
-        'last_name': lastName,
-      });
-
-      // Registrar en tabla workers
-      await _supabase.from('workers').insert({
-        'tenant_id': tenantId,
-        'profile_id': workerId,
-        'first_name': firstName,
-        'last_name': lastName,
-        'email': email,
-      });
-
-      return AuthResult.ok({
-        'worker_id': workerId,
-        'email': email,
-      });
     } catch (e) {
       return AuthResult.fail('Error al crear el trabajador: $e');
     }
@@ -203,21 +169,28 @@ class WorkerEmailService {
 
   // ─────────────────────────────────────────────
   // ELIMINAR TRABAJADOR
+  // Llama a la Edge Function "delete-worker" para también
+  // eliminar el usuario de auth.users.
   // ─────────────────────────────────────────────
   static Future<AuthResult> deleteWorker(String workerId) async {
     try {
-      // Eliminar de workers
-      await _supabase.from('workers').delete().eq('profile_id', workerId);
+      final response = await _supabase.functions.invoke(
+        'delete-worker',
+        body: {'workerId': workerId},
+      );
 
-      // Eliminar perfil
-      await _supabase.from('profiles').delete().eq('id', workerId);
-
-      // Nota: eliminar de auth.users requiere Admin API / Edge Function
-      // Se deja como pendiente para la fase de producción
-
-      return AuthResult.ok();
+      final responseData = response.data;
+      if (responseData is Map<String, dynamic>) {
+        if (responseData.containsKey('error')) {
+          return AuthResult.fail(responseData['error'].toString());
+        }
+        return AuthResult.ok();
+      } else {
+        // Si no es Map, consideramos éxito genérico
+        return AuthResult.ok();
+      }
     } catch (e) {
-      return AuthResult.fail('Error al eliminar el trabajador.');
+      return AuthResult.fail('Error al eliminar el trabajador: $e');
     }
   }
 

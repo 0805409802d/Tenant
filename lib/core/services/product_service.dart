@@ -18,6 +18,20 @@ class ProductService {
     }
   }
 
+  /// Obtiene un producto individual por su ID
+  static Future<Map<String, dynamic>?> getProductById(String productId) async {
+    try {
+      final res = await _supabase
+          .from('products')
+          .select('*, tenants:tenant_id (business_name, slug, primary_color, logo_url)')
+          .eq('id', productId)
+          .maybeSingle();
+      return res;
+    } catch (e) {
+      return null;
+    }
+  }
+
   /// Obtiene todos los productos de un tenant (Para el Manager, incluye inactivos)
   static Future<List<Map<String, dynamic>>> getAllProductsForManager(String tenantId) async {
     try {

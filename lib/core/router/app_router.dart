@@ -23,6 +23,8 @@ import '../../features/management/screens/management_history_screen.dart';
 import '../../features/management/screens/management_sales_screen.dart';
 import '../../features/management/screens/management_clients_screen.dart';
 import '../../features/management/screens/management_products_screen.dart';
+import '../../features/management/screens/management_subscriptions_screen.dart';
+import '../../features/management/screens/management_shell.dart';
 
 // ── Advertisers ───────────────────────────────
 import '../../features/advertisers/screens/advertisers_home_screen.dart';
@@ -103,11 +105,15 @@ class AppRouter {
   // El tenant activo se resuelve una sola vez aquí
   // a través de TenantResolver, que es la fuente de verdad.
   // ─────────────────────────────────────────────
-  static List<GoRoute> _buildRoutes() {
+  static List<RouteBase> _buildRoutes() {
     final space = TenantResolver.resolve();
     final slug = TenantResolver.clientSlug();
 
-    switch (space) {
+    return _getRoutesForTenant(space, slug);
+  }
+
+  static List<RouteBase> _getRoutesForTenant(TenantType type, String? slug) {
+    switch (type) {
 
       // ── ADMIN ──────────────────────────────
       case TenantType.admin:
@@ -178,33 +184,34 @@ class AppRouter {
 
       // ── CLIENT ─────────────────────────────
       case TenantType.client:
+        final safeSlug = slug ?? '';
         return [
           GoRoute(
             path: '/',
-            builder: (context, state) => ClientHomeScreen(tenantSlug: slug),
+            builder: (context, state) => ClientHomeScreen(tenantSlug: safeSlug),
           ),
           GoRoute(
             path: '/product/:id',
             builder: (context, state) => ClientProductDetailScreen(
-              tenantSlug: slug,
+              tenantSlug: safeSlug,
               productId: state.pathParameters['id']!,
             ),
           ),
           GoRoute(
             path: '/login',
-            builder: (context, state) => ClientLoginScreen(tenantSlug: slug),
+            builder: (context, state) => ClientLoginScreen(tenantSlug: safeSlug),
           ),
           GoRoute(
             path: '/register',
-            builder: (context, state) => ClientRegisterScreen(tenantSlug: slug),
+            builder: (context, state) => ClientRegisterScreen(tenantSlug: safeSlug),
           ),
           GoRoute(
             path: '/settings',
-            builder: (context, state) => const ClientSettingsScreen(),
+            builder: (context, state) => ClientSettingsScreen(tenantSlug: safeSlug),
           ),
           GoRoute(
             path: '/security',
-            builder: (context, state) => const ClientSecurityScreen(),
+            builder: (context, state) => ClientSecurityScreen(tenantSlug: safeSlug),
           ),
         ];
 
@@ -212,10 +219,50 @@ class AppRouter {
       case TenantType.management:
       default:
         return [
-          GoRoute(
-            path: '/',
-            builder: (context, state) => const ManagementHomeScreen(),
+          StatefulShellRoute.indexedStack(
+            builder: (context, state, navigationShell) {
+              return ManagementShell(navigationShell: navigationShell);
+            },
+            branches: [
+              // Branch 0: Dashboard/Home
+              StatefulShellBranch(
+                routes: [
+                  GoRoute(
+                    path: '/',
+                    builder: (context, state) => const ManagementHomeScreen(),
+                  ),
+                ],
+              ),
+              // Branch 1: Pedidos
+              StatefulShellBranch(
+                routes: [
+                  GoRoute(
+                    path: '/sales',
+                    builder: (context, state) => const ManagementSalesScreen(),
+                  ),
+                ],
+              ),
+              // Branch 2: Catálogo
+              StatefulShellBranch(
+                routes: [
+                  GoRoute(
+                    path: '/products',
+                    builder: (context, state) => const ManagementProductsScreen(),
+                  ),
+                ],
+              ),
+              // Branch 3: Ajustes
+              StatefulShellBranch(
+                routes: [
+                  GoRoute(
+                    path: '/settings',
+                    builder: (context, state) => const ManagementSettingsScreen(),
+                  ),
+                ],
+              ),
+            ],
           ),
+          // Rutas fuera del Shell
           GoRoute(
             path: '/login',
             builder: (context, state) => const ManagementLoginScreen(),
@@ -223,10 +270,6 @@ class AppRouter {
           GoRoute(
             path: '/register',
             builder: (context, state) => const ManagementRegisterScreen(),
-          ),
-          GoRoute(
-            path: '/settings',
-            builder: (context, state) => const ManagementSettingsScreen(),
           ),
           GoRoute(
             path: '/security',
@@ -237,16 +280,12 @@ class AppRouter {
             builder: (context, state) => const ManagementHistoryScreen(),
           ),
           GoRoute(
-            path: '/sales',
-            builder: (context, state) => const ManagementSalesScreen(),
-          ),
-          GoRoute(
             path: '/clients',
             builder: (context, state) => const ManagementClientsScreen(),
           ),
           GoRoute(
-            path: '/products',
-            builder: (context, state) => const ManagementProductsScreen(),
+            path: '/subscriptions',
+            builder: (context, state) => const ManagementSubscriptionsScreen(),
           ),
         ];
     }

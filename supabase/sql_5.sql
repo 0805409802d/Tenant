@@ -26,3 +26,4 @@ alter table public.tenants
   add column if not exists qr_url text,
   add column if not exists accepted_terms boolean default false,
   add column if not exists terms_accepted_at timestamp with time zone;
+  
