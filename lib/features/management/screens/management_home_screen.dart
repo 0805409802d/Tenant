@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/constants_theme_color.dart';
 import '../../../core/services/tenant_service.dart';
 import '../../../shared/theme/tenant_theme_provider.dart';
+import '../../../shared/theme/tenant_theme_notifier.dart';
 import '../../../shared/utils/responsive.dart';
 import '../../../shared/widgets/app_components.dart';
 import '../../../shared/widgets/app_widgets.dart';
@@ -32,10 +33,35 @@ class _ManagementHomeScreenState extends State<ManagementHomeScreen> {
   int _pendingOrders  = 0;
   int _approvedToday  = 0;
 
+  // Scroll controller to handle appBar collapse and dynamically update title/opacity
+  late final ScrollController _scrollController;
+  bool _isCollapsed = false;
+
   @override
   void initState() {
     super.initState();
+    _scrollController = ScrollController();
+    _scrollController.addListener(_onScroll);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final isMobile = Responsive.isMobile(context);
+    final threshold = (isMobile ? 290 : 220) - kToolbarHeight - MediaQuery.of(context).padding.top;
+    final collapsed = _scrollController.offset > threshold;
+    if (collapsed != _isCollapsed) {
+      setState(() {
+        _isCollapsed = collapsed;
+      });
+    }
   }
 
   Future<void> _load() async {
@@ -168,26 +194,30 @@ class _ManagementHomeScreenState extends State<ManagementHomeScreen> {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 1200),
                   child: CustomScrollView(
+                    controller: _scrollController,
                     physics: const AlwaysScrollableScrollPhysics(),
                     slivers: [
                   // ── SliverAppBar (Hero Header) ────────────────────────
                   SliverAppBar(
-                    expandedHeight: Responsive.isMobile(context) ? 200 : 175,
+                    expandedHeight: Responsive.isMobile(context) ? 290 : 220,
                     floating: false,
                     pinned: true,
                     backgroundColor: primaryColor,
                     elevation: 0,
                     automaticallyImplyLeading: false,
                     centerTitle: true,
-                    title: Text(
-                      businessName,
-                      style: TextStyle(
-                        fontFamily: 'Georgia',
-                        fontSize: Responsive.isDesktop(context) ? 75 : (Responsive.isTablet(context) ? 55 : 45),
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.white,
-                        letterSpacing: 0.5,
-                        height: 1.25,
+                    title: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 200),
+                      opacity: _isCollapsed ? 1.0 : 0.0,
+                      child: Text(
+                        businessName,
+                        style: const TextStyle(
+                          fontFamily: 'Montserrat',
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.white,
+                          letterSpacing: 0.5,
+                        ),
                       ),
                     ),
                     actions: [
@@ -216,136 +246,70 @@ class _ManagementHomeScreenState extends State<ManagementHomeScreen> {
                             ],
                           ),
                         ),
-                        padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 60, 20, 20),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            // ── Avatar & Saludo (Izquierda) ──
-                            Expanded(
-                              flex: 5,
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(3),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.white,
-                                      shape: themeNotifier.logoUrl != null ? BoxShape.rectangle : BoxShape.circle,
-                                      borderRadius: themeNotifier.logoUrl != null ? BorderRadius.circular(12) : null,
-                                    ),
-                                    child: themeNotifier.logoUrl != null
-                                        ? ClipRRect(
-                                            borderRadius: BorderRadius.circular(10),
-                                            child: Image.network(themeNotifier.logoUrl!, width: 64, height: 64, fit: BoxFit.cover),
-                                          )
-                                        : CircleAvatar(
-                                            radius: 32,
-                                            backgroundColor: AppColors.surfaceGrey,
-                                            child: Text(initials, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: primaryColor)),
-                                          ),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text('$_greeting,', style: TextStyle(fontSize: 16, color: AppColors.white.withValues(alpha: 0.85))),
-                                        Text(
-                                          name.split(' ').first,
-                                          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.white, letterSpacing: -0.5),
-                                        ),
-                                        if (_isWorker) ...[
-                                          const SizedBox(height: 4),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: AppColors.white.withValues(alpha: 0.2),
-                                              borderRadius: BorderRadius.circular(20),
-                                              border: Border.all(color: AppColors.white.withValues(alpha: 0.3)),
-                                            ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(Icons.badge_outlined, size: 14, color: AppColors.white.withValues(alpha: 0.95)),
-                                                const SizedBox(width: 4),
-                                                const Text('Trabajador', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.white)),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            // ── Glass Card: Uso de Productos (Derecha) ──
-                            if (!_isWorker) ...[
-                              const SizedBox(width: 16),
-                              Expanded(
-                                flex: 4,
-                                child: Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.white.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(color: AppColors.white.withValues(alpha: 0.2)),
-                                    boxShadow: [
-                                      BoxShadow(color: AppColors.overlay(0.1), blurRadius: 10, offset: const Offset(0, 4)),
-                                    ],
-                                  ),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Wrap(
-                                        alignment: WrapAlignment.spaceBetween,
-                                        runSpacing: 4,
-                                        children: [
-                                          const Text('Catálogo', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.white)),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                            decoration: BoxDecoration(color: AppColors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(4)),
-                                            child: Text(
-                                              'Plan ${_planTier.toUpperCase()}',
-                                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.white, letterSpacing: 0.5),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 12),
-                                      Wrap(
-                                        alignment: WrapAlignment.spaceBetween,
-                                        runSpacing: 2,
-                                        children: [
-                                          Text('Uso', style: TextStyle(fontSize: 11, color: AppColors.white.withValues(alpha: 0.8))),
-                                          Text(
-                                            '$_totalProducts / $_productLimit',
-                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.white),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 6),
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(4),
-                                        child: LinearProgressIndicator(
-                                          value: _productLimit > 0 ? (_totalProducts / _productLimit).clamp(0.0, 1.0) : 0,
-                                          minHeight: 6,
-                                          backgroundColor: AppColors.white.withValues(alpha: 0.2),
-                                          valueColor: AlwaysStoppedAnimation<Color>(
-                                            _totalProducts >= _productLimit ? const Color(0xFFFF8C00) : AppColors.white,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                        padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 16, 20, 16),
+                        child: AnimatedOpacity(
+                          duration: const Duration(milliseconds: 200),
+                          opacity: _isCollapsed ? 0.0 : 1.0,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // ── Business Name (Grande) ──
+                              Text(
+                                businessName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: 'Montserrat',
+                                  fontSize: Responsive.isMobile(context) ? 26 : 34,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.white,
+                                  letterSpacing: -0.5,
                                 ),
                               ),
+                              const Spacer(),
+                              // ── Sub-content Layout (Responsive) ──
+                              if (Responsive.isMobile(context))
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildGreetingRow(
+                                      context: context,
+                                      name: name,
+                                      initials: initials,
+                                      themeNotifier: themeNotifier,
+                                      primaryColor: primaryColor,
+                                    ),
+                                    if (!_isWorker) ...[
+                                      const SizedBox(height: 12),
+                                      _buildGlassCard(),
+                                    ],
+                                  ],
+                                )
+                              else
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Expanded(
+                                      flex: 5,
+                                      child: _buildGreetingRow(
+                                        context: context,
+                                        name: name,
+                                        initials: initials,
+                                        themeNotifier: themeNotifier,
+                                        primaryColor: primaryColor,
+                                      ),
+                                    ),
+                                    if (!_isWorker) ...[
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        flex: 4,
+                                        child: _buildGlassCard(),
+                                      ),
+                                    ],
+                                  ],
+                                ),
                             ],
-                          ],
+                          ),
                         ),
                       ),
                     ),
@@ -590,6 +554,137 @@ class _ManagementHomeScreenState extends State<ManagementHomeScreen> {
         ])),
         const SizedBox(height: 32),
       ])),
+    );
+  }
+
+  // ── HELPER WIDGETS FOR DYNAMIC HEADER ──
+
+  Widget _buildGreetingRow({
+    required BuildContext context,
+    required String name,
+    required String initials,
+    required TenantThemeNotifier themeNotifier,
+    required Color primaryColor,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: AppColors.white,
+            shape: themeNotifier.logoUrl != null ? BoxShape.rectangle : BoxShape.circle,
+            borderRadius: themeNotifier.logoUrl != null ? BorderRadius.circular(12) : null,
+          ),
+          child: themeNotifier.logoUrl != null
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.network(themeNotifier.logoUrl!, width: 52, height: 52, fit: BoxFit.cover),
+                )
+              : CircleAvatar(
+                  radius: 26,
+                  backgroundColor: AppColors.surfaceGrey,
+                  child: Text(
+                    initials,
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryColor),
+                  ),
+                ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('$_greeting,', style: TextStyle(fontSize: 13, color: AppColors.white.withValues(alpha: 0.85))),
+              Text(
+                name.split(' ').first,
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.white, letterSpacing: -0.5),
+              ),
+              if (_isWorker) ...[
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.white.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.badge_outlined, size: 12, color: AppColors.white.withValues(alpha: 0.95)),
+                      const SizedBox(width: 4),
+                      const Text('Trabajador', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.white)),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGlassCard() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.white.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.white.withValues(alpha: 0.2)),
+        boxShadow: [
+          BoxShadow(color: AppColors.overlay(0.1), blurRadius: 10, offset: const Offset(0, 4)),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Catálogo', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.white)),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'Plan ${_planTier.toUpperCase()}',
+                  style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: AppColors.white, letterSpacing: 0.5),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Uso', style: TextStyle(fontSize: 10, color: AppColors.white.withValues(alpha: 0.8))),
+              Text(
+                '$_totalProducts / $_productLimit',
+                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.white),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: _productLimit > 0 ? (_totalProducts / _productLimit).clamp(0.0, 1.0) : 0,
+              minHeight: 4,
+              backgroundColor: AppColors.white.withValues(alpha: 0.2),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                _totalProducts >= _productLimit ? const Color(0xFFFF8C00) : AppColors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

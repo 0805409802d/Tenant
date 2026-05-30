@@ -65,6 +65,22 @@ class OrderService {
     }
   }
 
+  /// Obtiene los detalles de los items de un pedido
+  static Future<List<Map<String, dynamic>>> getOrderItems(String orderId) async {
+    try {
+      final res = await _supabase
+          .from('order_items')
+          .select('''
+            quantity, unit_price,
+            products (name)
+          ''')
+          .eq('order_id', orderId);
+      return List<Map<String, dynamic>>.from(res);
+    } catch (e) {
+      return [];
+    }
+  }
+
   /// Actualiza el estado del pedido (Aprobar/Rechazar por el Manager)
   static Future<bool> updateOrderStatus(String orderId, String status) async {
     try {

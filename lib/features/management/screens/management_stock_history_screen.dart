@@ -190,7 +190,7 @@ class _ManagementStockHistoryScreenState extends State<ManagementStockHistoryScr
                             label: 'Ajustes',
                             isSelected: _selectedType == 'adjustment',
                             onTap: () {
-                              setState(() => _selectedType == 'adjustment');
+                              setState(() => _selectedType = 'adjustment');
                               _fetchTransactions();
                             },
                             primaryColor: primaryColor,

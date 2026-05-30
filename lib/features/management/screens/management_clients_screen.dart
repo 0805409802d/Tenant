@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/constants_theme_color.dart';
 import '../../../core/services/client_service.dart';
 import '../../../core/services/credit_service.dart';
@@ -95,6 +96,36 @@ class _ManagementClientsScreenState extends State<ManagementClientsScreen> {
     });
   }
 
+  Future<void> _sendMassMessage() async {
+    final msg = _messageCtrl.text.trim();
+    if (msg.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Escribe un mensaje para enviar.')));
+      return;
+    }
+
+    int sentCount = 0;
+    for (int i = 0; i < _selectedClients.length; i++) {
+      if (_selectedClients[i]) {
+        final clientRow = _filteredClients[i];
+        final phone = clientRow['profiles']?['phone'];
+        if (phone != null && phone.toString().isNotEmpty) {
+          final cleanPhone = phone.toString().replaceAll(RegExp(r'[^\d]'), '');
+          if (cleanPhone.isNotEmpty) {
+            final uri = Uri.parse('https://wa.me/$cleanPhone?text=${Uri.encodeComponent(msg)}');
+            if (await canLaunchUrl(uri)) {
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+              sentCount++;
+            }
+          }
+        }
+      }
+    }
+
+    if (sentCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ningún cliente seleccionado tiene número válido.')));
+    }
+  }
+
   void _showClientDetails(Map<String, dynamic> clientRow) {
     showModalBottomSheet(
       context: context,
@@ -116,7 +147,7 @@ class _ManagementClientsScreenState extends State<ManagementClientsScreen> {
       title: 'Clientes',
       accentColor: AppColors.accentPurple,
       body: _loading
-          ? const Center(child: AppShimmerLoader(height: 100, borderRadius: 16))
+          ? const AppShimmerLoader(height: 100, borderRadius: 16)
           : Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 1000),
@@ -146,7 +177,7 @@ class _ManagementClientsScreenState extends State<ManagementClientsScreen> {
                                 child: Icon(Icons.chat_rounded, color: themeColor, size: 20),
                               ),
                               const SizedBox(width: 12),
-                              const Text('Mensajería Masiva (Próximamente)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                              const Text('Mensajería Masiva', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                             ],
                           ),
                           const SizedBox(height: 16),
@@ -175,7 +206,7 @@ class _ManagementClientsScreenState extends State<ManagementClientsScreen> {
                               ),
                               AppButton(
                                 label: 'Enviar',
-                                onPressed: () {},
+                                onPressed: _sendMassMessage,
                                 icon: Icons.send_rounded,
                                 fullWidth: false,
                                 color: themeColor,

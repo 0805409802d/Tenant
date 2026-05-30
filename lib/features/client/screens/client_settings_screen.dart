@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../core/constants/constants_theme_color.dart';
 import '../../../core/services/credit_service.dart';
 import '../../../shared/widgets/app_widgets.dart';
@@ -23,6 +24,7 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen>
   List<Map<String, dynamic>> _creditLedger = [];
   String? _tenantId;
   String _instructions = '';
+  String? _avatarUrl;
 
   late AnimationController _animCtrl;
   late Animation<double> _fadeAnim;
@@ -57,6 +59,11 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen>
       if (uid != null && _tenantId != null) {
         _creditInfo = await CreditService.getClientCreditInfo(tenantId: _tenantId!, clientId: uid);
         _creditLedger = await CreditService.getCreditLedger(tenantId: _tenantId!, clientId: uid);
+        
+        final profileRes = await db.from('profiles').select('avatar_url').eq('id', uid).maybeSingle();
+        if (profileRes != null) {
+          _avatarUrl = profileRes['avatar_url'] as String?;
+        }
       }
     } catch (_) {}
     
@@ -70,6 +77,43 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen>
   void dispose() {
     _animCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickAndUploadImage() async {
+    try {
+      final picker = ImagePicker();
+      final XFile? image = await picker.pickImage(source: ImageSource.gallery, maxWidth: 800, maxHeight: 800);
+      if (image == null) return;
+
+      setState(() => _savingPhoto = true);
+
+      final bytes = await image.readAsBytes();
+      final ext = image.name.split('.').last.toLowerCase();
+      final uid = Supabase.instance.client.auth.currentUser!.id;
+      final fileName = 'avatar_${uid}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final path = '$uid/$fileName';
+
+      await Supabase.instance.client.storage
+          .from('avatars')
+          .uploadBinary(path, bytes, fileOptions: FileOptions(contentType: 'image/$ext'));
+
+      final publicUrl = Supabase.instance.client.storage.from('avatars').getPublicUrl(path);
+
+      await Supabase.instance.client.from('profiles').update({'avatar_url': publicUrl}).eq('id', uid);
+
+      if (mounted) {
+        setState(() {
+          _avatarUrl = publicUrl;
+          _savingPhoto = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Foto de perfil actualizada.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _savingPhoto = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al subir imagen: $e')));
+      }
+    }
   }
 
   @override
@@ -97,7 +141,7 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen>
             if (context.canPop()) {
               context.pop();
             } else {
-              context.go('/t/${widget.tenantSlug}');
+              context.go('/');
             }
           },
         ),
@@ -159,12 +203,13 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen>
                           CircleAvatar(
                             radius: 52,
                             backgroundColor: AppColors.surfaceGrey,
-                            child: const Icon(Icons.person_rounded, size: 52, color: AppColors.textSecondary),
+                            backgroundImage: _avatarUrl != null ? NetworkImage(_avatarUrl!) : null,
+                            child: _avatarUrl == null ? const Icon(Icons.person_rounded, size: 52, color: AppColors.textSecondary) : null,
                           ),
                           Positioned(
                             right: 0, bottom: 0,
                             child: GestureDetector(
-                              onTap: () {}, // TODO: image picker
+                              onTap: _pickAndUploadImage,
                               child: Container(
                                 width: 34, height: 34,
                                 decoration: BoxDecoration(
@@ -195,7 +240,7 @@ class _ClientSettingsScreenState extends State<ClientSettingsScreen>
                     const SizedBox(height: 24),
                     SizedBox(
                       width: double.infinity,
-                      child: AppButton(label: 'Cambiar foto', onPressed: () {}, isLoading: _savingPhoto, color: _primaryColor),
+                      child: AppButton(label: 'Cambiar foto', onPressed: _pickAndUploadImage, isLoading: _savingPhoto, color: _primaryColor),
                     ),
                   ],
                 ),

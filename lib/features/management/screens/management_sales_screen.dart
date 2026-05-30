@@ -121,26 +121,28 @@ class _ManagementSalesScreenState extends State<ManagementSalesScreen> {
             ),
           ),
           
-          Expanded(
-            child: _loading
-                ? ListView.separated(
-                    padding: const EdgeInsets.all(20),
-                    itemCount: 4,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (_, __) => const AppShimmerLoader(height: 140, borderRadius: 16),
-                  )
-                : _filteredOrders.isEmpty
-                    ? AppEmptyState(
-                        icon: Icons.receipt_long_outlined,
-                        title: _filter == 'all' ? 'Aún no tienes pedidos' : 'No hay pedidos en este estado',
-                        subtitle: 'Cuando tus clientes hagan un pedido en tu sitio web, aparecerán aquí.',
-                        iconColor: AppColors.accentAmber,
-                      )
-                    : ListView.separated(
-                        padding: EdgeInsets.fromLTRB(20, 0, 20, pendingCount > 0 ? 100 : 20),
-                        shrinkWrap: true,
-                        itemCount: _filteredOrders.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+          _loading
+              ? ListView.separated(
+                  padding: const EdgeInsets.all(20),
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: 4,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (_, __) => const AppShimmerLoader(height: 140, borderRadius: 16),
+                )
+              : _filteredOrders.isEmpty
+                  ? AppEmptyState(
+                      icon: Icons.receipt_long_outlined,
+                      title: _filter == 'all' ? 'Aún no tienes pedidos' : 'No hay pedidos en este estado',
+                      subtitle: 'Cuando tus clientes hagan un pedido en tu sitio web, aparecerán aquí.',
+                      iconColor: AppColors.accentAmber,
+                    )
+                  : ListView.separated(
+                      padding: EdgeInsets.fromLTRB(20, 0, 20, pendingCount > 0 ? 100 : 20),
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _filteredOrders.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
                         itemBuilder: (context, index) {
                           final o = _filteredOrders[index];
                           final client = o['profiles'] ?? {};
@@ -155,7 +157,6 @@ class _ManagementSalesScreenState extends State<ManagementSalesScreen> {
                           );
                         },
                       ),
-          ),
         ],
       ),
     )));

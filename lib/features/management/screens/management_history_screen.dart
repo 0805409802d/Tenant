@@ -16,6 +16,7 @@ class ManagementHistoryScreen extends StatefulWidget {
 class _ManagementHistoryScreenState extends State<ManagementHistoryScreen> {
   final _searchCtrl = TextEditingController();
   int _selectedFilterIndex = 0;
+  bool _sortAscending = false;
   
   List<Map<String, dynamic>> _orders = [];
   List<Map<String, dynamic>> _filteredOrders = [];
@@ -49,6 +50,12 @@ class _ManagementHistoryScreenState extends State<ManagementHistoryScreen> {
 
         return matchesSearch && matchesStatus;
       }).toList();
+      
+      _filteredOrders.sort((a, b) {
+        final dateA = DateTime.tryParse(a['created_at'] ?? '') ?? DateTime.now();
+        final dateB = DateTime.tryParse(b['created_at'] ?? '') ?? DateTime.now();
+        return _sortAscending ? dateA.compareTo(dateB) : dateB.compareTo(dateA);
+      });
     });
   }
 
@@ -75,6 +82,15 @@ class _ManagementHistoryScreenState extends State<ManagementHistoryScreen> {
     super.dispose();
   }
 
+  void _showOrderDetails(Map<String, dynamic> order, String name, String phone) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _OrderDetailsSheet(order: order, name: name, phone: phone),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppScaffold(
@@ -84,13 +100,18 @@ class _ManagementHistoryScreenState extends State<ManagementHistoryScreen> {
       accentColor: AppColors.primary,
       actions: [
         IconButton(
-          icon: const Icon(Icons.sort_rounded, color: AppColors.textPrimary, size: 20),
+          icon: Icon(_sortAscending ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded, color: AppColors.textPrimary, size: 20),
           tooltip: 'Ordenar',
-          onPressed: () {},
+          onPressed: () {
+            setState(() {
+              _sortAscending = !_sortAscending;
+              _applyFilters(_searchCtrl.text.toLowerCase(), _selectedFilterIndex);
+            });
+          },
         ),
       ],
       body: _loading
-          ? const Center(child: AppShimmerLoader(height: 100, borderRadius: 16))
+          ? const AppShimmerLoader(height: 100, borderRadius: 16)
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -147,9 +168,7 @@ class _ManagementHistoryScreenState extends State<ManagementHistoryScreen> {
                         date: AppFormatters.dateTime(date),
                         total: AppFormatters.price(total),
                         status: status,
-                        onTap: () {
-                          // TODO: Detalle del pedido
-                        },
+                        onTap: () => _showOrderDetails(order, name, phone),
                       );
                     },
                   ),
@@ -247,7 +266,7 @@ class _ClientHistoryCard extends StatelessWidget {
                       const Icon(Icons.phone_outlined, size: 14, color: AppColors.textSecondary),
                       const SizedBox(width: 6),
                       Expanded(
-                        child: Text(phone, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary), overflow: TextOverflow.ellipsis),
+                        child: Text(phone, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary), overflow: TextOverflow.ellipsis, maxLines: 1),
                       ),
                     ],
                   ),
@@ -273,6 +292,97 @@ class _ClientHistoryCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _OrderDetailsSheet extends StatefulWidget {
+  final Map<String, dynamic> order;
+  final String name;
+  final String phone;
+
+  const _OrderDetailsSheet({required this.order, required this.name, required this.phone});
+
+  @override
+  State<_OrderDetailsSheet> createState() => _OrderDetailsSheetState();
+}
+
+class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
+  List<Map<String, dynamic>> _items = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadItems();
+  }
+
+  Future<void> _loadItems() async {
+    final items = await OrderService.getOrderItems(widget.order['id']);
+    if (mounted) {
+      setState(() {
+        _items = items;
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(bottom: 24),
+            child: Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+          ),
+          Text('Pedido de ${widget.name}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+          Text(widget.phone, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+          const SizedBox(height: 16),
+          if (_loading)
+            const Center(child: CircularProgressIndicator())
+          else if (_items.isEmpty)
+            const Text('No se encontraron items.', style: TextStyle(color: AppColors.textSecondary))
+          else
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _items.length,
+              itemBuilder: (context, i) {
+                final item = _items[i];
+                final prodName = item['products']?['name'] ?? 'Producto eliminado';
+                final qty = item['quantity'] ?? 1;
+                final price = (item['unit_price'] as num? ?? 0.0).toDouble();
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('$qty x $prodName', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  trailing: Text(AppFormatters.price(qty * price), style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary)),
+                );
+              },
+            ),
+          const SizedBox(height: 16),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              'Total: ${AppFormatters.price((widget.order['total_amount'] as num? ?? 0.0).toDouble())}',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: AppColors.primary),
+            ),
+          ),
+          SizedBox(height: MediaQuery.of(context).viewInsets.bottom + 24),
+        ],
       ),
     );
   }

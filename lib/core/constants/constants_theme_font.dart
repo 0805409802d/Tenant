@@ -48,7 +48,6 @@ abstract final class AppFonts {
         color:         color,
         letterSpacing: letterSpacing,
         height:        height,
-        fontFamilyFallback: sansFallback,
       );
 
   /// Playfair Display con fallbacks serif.
@@ -65,7 +64,6 @@ abstract final class AppFonts {
         color:         color,
         letterSpacing: letterSpacing,
         height:        height,
-        fontFamilyFallback: serifFallback,
       );
 }
 
