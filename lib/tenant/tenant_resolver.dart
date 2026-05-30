@@ -56,8 +56,8 @@ class TenantResolver {
     // Admin: ruta secreta
     if (path.startsWith('/d8t1-admin-panel')) return TenantType.admin;
 
-    // Management: dominio raíz
-    if (host == 'quinindews.com' || host == 'www.quinindews.com') {
+    // Management: dominio raíz o subdominio especificado
+    if (host == 'quinindews.com' || host == 'www.quinindews.com' || host == 'tenant.quinindews.com') {
       return TenantType.management;
     }
 
