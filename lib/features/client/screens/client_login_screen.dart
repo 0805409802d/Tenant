@@ -21,6 +21,7 @@ class _ClientLoginScreenState extends State<ClientLoginScreen>
   // Tema dinámico
   Color _primaryColor = const Color(0xFF0097A7);
   bool _loadingTheme = true;
+  String _tenantName = '';
 
   final _emailCtrl = TextEditingController();
   final _passCtrl  = TextEditingController();
@@ -47,16 +48,22 @@ class _ClientLoginScreenState extends State<ClientLoginScreen>
   }
 
   Future<void> _loadTheme() async {
+    _tenantName = widget.tenantSlug;
     try {
       final res = await Supabase.instance.client
           .from('tenants')
-          .select('primary_color')
+          .select('primary_color, name')
           .eq('slug', widget.tenantSlug)
           .maybeSingle();
 
-      if (res != null && res['primary_color'] != null) {
-        final hex = (res['primary_color'] as String).replaceAll('#', '');
-        _primaryColor = Color(int.parse('FF$hex', radix: 16));
+      if (res != null) {
+        if (res['primary_color'] != null) {
+          final hex = (res['primary_color'] as String).replaceAll('#', '');
+          _primaryColor = Color(int.parse('FF$hex', radix: 16));
+        }
+        if (res['name'] != null && res['name'].toString().isNotEmpty) {
+          _tenantName = res['name'];
+        }
       }
     } catch (_) {}
     
@@ -181,7 +188,7 @@ class _ClientLoginScreenState extends State<ClientLoginScreen>
   Widget _creds() => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
     Container(width: 40, height: 4, decoration: BoxDecoration(color: _primaryColor, borderRadius: BorderRadius.circular(2))),
     const SizedBox(height: 24),
-    Text('Bienvenido a ${widget.tenantSlug}', style: const TextStyle(fontFamily: 'Georgia', fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary, height: 1.2)),
+    Text('Bienvenido a $_tenantName', style: const TextStyle(fontFamily: 'Georgia', fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary, height: 1.2)),
     const SizedBox(height: 6),
     const Text('Inicia sesión para continuar comprando.', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
     const SizedBox(height: 32),

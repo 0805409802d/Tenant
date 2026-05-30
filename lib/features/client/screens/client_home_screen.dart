@@ -499,9 +499,11 @@ class _ClientHomeScreenState extends State<ClientHomeScreen> with TickerProvider
                           GridView.builder(
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
-                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: Responsive.isDesktop(context) ? 4 : (Responsive.isTablet(context) ? 3 : 2),
-                              mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 0.68,
+                            gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                              maxCrossAxisExtent: 180,
+                              mainAxisSpacing: 16,
+                              crossAxisSpacing: 16,
+                              childAspectRatio: Responsive.isMobile(context) ? 0.58 : 0.64,
                             ),
                             itemCount: _products.length,
                             itemBuilder: (_, i) {
@@ -642,40 +644,61 @@ class _ProductDetailInlineState extends State<_ProductDetailInline> {
       backgroundColor: AppColors.surfaceGrey,
       body: CustomScrollView(
         slivers: [
-          // Imagen inmersiva edge-to-edge
           SliverAppBar(
-            expandedHeight: MediaQuery.of(context).size.width,
             pinned: true,
-            backgroundColor: AppColors.surface,
+            backgroundColor: AppColors.surfaceGrey,
             elevation: 0,
             leading: Container(
               margin: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: AppColors.surface.withValues(alpha: 0.85),
+                color: AppColors.surface,
                 shape: BoxShape.circle,
-                boxShadow: [BoxShadow(color: AppColors.overlay(0.08), blurRadius: 8)],
+                boxShadow: [BoxShadow(color: AppColors.overlay(0.04), blurRadius: 4)],
               ),
               child: IconButton(
                 icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: AppColors.textPrimary),
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ),
-            flexibleSpace: FlexibleSpaceBar(
-              background: imageUrl != null
-                  ? Image.network(imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _imgPlaceholderLarge())
-                  : _imgPlaceholderLarge(),
-            ),
           ),
           SliverPadding(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
             sliver: SliverList(
               delegate: SliverChildListDelegate(
                 [
-                  Text(name, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: AppColors.textPrimary, letterSpacing: -0.5)),
-                  const SizedBox(height: 8),
-                  Text('\$${price.toStringAsFixed(2)}', style: TextStyle(fontSize: 20, color: widget.primaryColor, fontWeight: FontWeight.w800)),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 120, height: 120,
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: AppColors.border),
+                          boxShadow: [BoxShadow(color: AppColors.overlay(0.04), blurRadius: 10)],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: imageUrl != null
+                              ? Image.network(imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _imgPlaceholderLarge())
+                              : _imgPlaceholderLarge(),
+                        ),
+                      ),
+                      const SizedBox(width: 20),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(name, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: AppColors.textPrimary, letterSpacing: -0.5)),
+                            const SizedBox(height: 8),
+                            Text('\$${price.toStringAsFixed(2)}', style: TextStyle(fontSize: 20, color: widget.primaryColor, fontWeight: FontWeight.w800)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                   if (desc != null && desc.isNotEmpty) ...[
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 24),
                     const Divider(),
                     const SizedBox(height: 16),
                     const Text('Descripción', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
@@ -1373,7 +1396,7 @@ class _CatalogSkeleton extends StatelessWidget {
                   crossAxisCount: 2,
                   mainAxisSpacing: 12,
                   crossAxisSpacing: 12,
-                  childAspectRatio: 0.68,
+                  childAspectRatio: Responsive.isMobile(context) ? 0.58 : 0.64,
                   children: List.generate(4, (_) => const AppShimmerLoader(borderRadius: 16)),
                 ),
               ),

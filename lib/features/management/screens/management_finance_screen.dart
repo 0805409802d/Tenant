@@ -436,6 +436,8 @@ class _ManagementFinanceScreenState extends State<ManagementFinanceScreen> {
       return v > max ? v : max;
     });
 
+    final bool isMobile = MediaQuery.of(context).size.width < 600;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -447,77 +449,115 @@ class _ManagementFinanceScreenState extends State<ManagementFinanceScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Comparativa Diaria', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-              Row(
-                children: [
-                  _LegendIndicator(color: const Color(0xFF673AB7), label: 'Ingresos'),
-                  const SizedBox(width: 16),
-                  _LegendIndicator(color: const Color(0xFF00BFA5), label: 'Utilidad Neta'),
-                ],
-              ),
-            ],
-          ),
+          isMobile
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Comparativa Diaria', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        _LegendIndicator(color: const Color(0xFF673AB7), label: 'Ingresos'),
+                        const SizedBox(width: 16),
+                        _LegendIndicator(color: const Color(0xFF00BFA5), label: 'Utilidad Neta'),
+                      ],
+                    ),
+                  ],
+                )
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Comparativa Diaria', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                    Row(
+                      children: [
+                        _LegendIndicator(color: const Color(0xFF673AB7), label: 'Ingresos'),
+                        const SizedBox(width: 16),
+                        _LegendIndicator(color: const Color(0xFF00BFA5), label: 'Utilidad Neta'),
+                      ],
+                    ),
+                  ],
+                ),
           const SizedBox(height: 28),
           
           // Visual bars
           SizedBox(
             height: 180,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: _dailyData.map((d) {
-                final double revHeightFactor = (d.revenue / maxVal).clamp(0.04, 1.0);
-                final double netHeightFactor = (d.netProfit / maxVal).clamp(0.04, 1.0);
-                final String label = '${d.date.day}/${d.date.month}';
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final double barWidth = isMobile ? 48.0 : 64.0;
+                final double chartWidth = _dailyData.length * barWidth;
+                
+                Widget chartContent = Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: _dailyData.map((d) {
+                    final double revHeightFactor = (d.revenue / maxVal).clamp(0.04, 1.0);
+                    final double netHeightFactor = (d.netProfit / maxVal).clamp(0.04, 1.0);
+                    final String label = '${d.date.day}/${d.date.month}';
 
-                return Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Expanded(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            // Revenue bar
-                            Tooltip(
-                              message: 'Ingreso: $_currencySymbol${d.revenue.toStringAsFixed(2)}',
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 300),
-                                width: 8,
-                                height: 140 * revHeightFactor,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF673AB7).withOpacity(0.85),
-                                  borderRadius: BorderRadius.circular(4),
+                    Widget columnWidget = Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Expanded(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              // Revenue bar
+                              Tooltip(
+                                message: 'Ingreso: $_currencySymbol${d.revenue.toStringAsFixed(2)}',
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 300),
+                                  width: 8,
+                                  height: 140 * revHeightFactor,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF673AB7).withOpacity(0.85),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 4),
-                            // Net Profit bar
-                            Tooltip(
-                              message: 'Ganancia Neta: $_currencySymbol${d.netProfit.toStringAsFixed(2)}',
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 300),
-                                width: 8,
-                                height: 140 * (d.netProfit > 0 ? netHeightFactor : 0.04),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF00BFA5).withOpacity(0.85),
-                                  borderRadius: BorderRadius.circular(4),
+                              const SizedBox(width: 4),
+                              // Net Profit bar
+                              Tooltip(
+                                message: 'Ganancia Neta: $_currencySymbol${d.netProfit.toStringAsFixed(2)}',
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 300),
+                                  width: 8,
+                                  height: 140 * (d.netProfit > 0 ? netHeightFactor : 0.04),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF00BFA5).withOpacity(0.85),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(label, style: const TextStyle(fontSize: 10, color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
+                        const SizedBox(height: 8),
+                        Text(label, style: const TextStyle(fontSize: 10, color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+                      ],
+                    );
+
+                    if (isMobile && _dailyData.length > 6) {
+                      return SizedBox(width: barWidth, child: columnWidget);
+                    } else {
+                      return Expanded(child: columnWidget);
+                    }
+                  }).toList(),
                 );
-              }).toList(),
+
+                if (isMobile && _dailyData.length > 6) {
+                  return SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SizedBox(
+                      width: chartWidth,
+                      child: chartContent,
+                    ),
+                  );
+                }
+
+                return chartContent;
+              },
             ),
           ),
         ],

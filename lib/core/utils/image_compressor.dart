@@ -10,9 +10,9 @@ class ImageCompressor {
   static Future<Uint8List?> compressImageBytes(Uint8List bytes) async {
     final result = await FlutterImageCompress.compressWithList(
       bytes,
-      minWidth: 720,
-      minHeight: 720,
-      quality: 50,
+      minWidth: 480,
+      minHeight: 480,
+      quality: 35,
       format: CompressFormat.jpeg,
     );
     return result;

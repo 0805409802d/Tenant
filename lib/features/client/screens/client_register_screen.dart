@@ -18,6 +18,7 @@ class _ClientRegisterScreenState extends State<ClientRegisterScreen>
   // Tema dinámico
   Color _primaryColor = const Color(0xFF0097A7);
   bool _loadingTheme = true;
+  String _tenantName = '';
 
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl  = TextEditingController();
@@ -39,16 +40,22 @@ class _ClientRegisterScreenState extends State<ClientRegisterScreen>
   }
 
   Future<void> _loadTheme() async {
+    _tenantName = widget.tenantSlug;
     try {
       final res = await Supabase.instance.client
           .from('tenants')
-          .select('primary_color')
+          .select('primary_color, name')
           .eq('slug', widget.tenantSlug)
           .maybeSingle();
 
-      if (res != null && res['primary_color'] != null) {
-        final hex = (res['primary_color'] as String).replaceAll('#', '');
-        _primaryColor = Color(int.parse('FF$hex', radix: 16));
+      if (res != null) {
+        if (res['primary_color'] != null) {
+          final hex = (res['primary_color'] as String).replaceAll('#', '');
+          _primaryColor = Color(int.parse('FF$hex', radix: 16));
+        }
+        if (res['name'] != null && res['name'].toString().isNotEmpty) {
+          _tenantName = res['name'];
+        }
       }
     } catch (_) {}
     
@@ -128,7 +135,7 @@ class _ClientRegisterScreenState extends State<ClientRegisterScreen>
                   const SizedBox(height: 24),
                   const Text('Crear cuenta', style: TextStyle(fontFamily: 'Georgia', fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary, height: 1.2)),
                   const SizedBox(height: 6),
-                  Text('Regístrate para comprar en ${widget.tenantSlug}.', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+                  Text('Regístrate para comprar en $_tenantName.', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
                   const SizedBox(height: 32),
 
                   // Nombre
