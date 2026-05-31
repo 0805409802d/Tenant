@@ -24,7 +24,7 @@ class _ManagementHomeScreenState extends State<ManagementHomeScreen> {
   int _totalWorkers  = 0;
   int _totalOrders   = 0;
   int _criticalProducts = 0;
-  int _productLimit  = 20;
+  int _productLimit  = 10;
   String _planTier   = 'freemium';
   bool _loading = true;
   bool _isWorker = false;
@@ -116,7 +116,7 @@ class _ManagementHomeScreenState extends State<ManagementHomeScreen> {
           try {
             final usageRes = await db.rpc('get_tenant_product_usage', params: {'p_tenant_id': tenantId});
             if (usageRes != null) {
-              _productLimit = usageRes['limit'] ?? 20;
+              _productLimit = usageRes['limit'] ?? 10;
               _planTier = usageRes['tier'] ?? 'freemium';
               products = usageRes['used'] ?? products;
             }

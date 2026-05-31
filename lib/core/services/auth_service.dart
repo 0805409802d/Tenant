@@ -116,6 +116,10 @@ class AuthService {
     required bool acceptedTerms,
   }) async {
     try {
+      email = normalizeEmail(email);
+      final phoneError = await _checkPhoneUniqueness(phone);
+      if (phoneError != null) return AuthResult.fail(phoneError);
+
       // Generar slug desde el nombre del negocio
       final slug = _generateSlug(businessName);
 
@@ -128,7 +132,8 @@ class AuthService {
 
       if (existingTenant != null) {
         return AuthResult.fail(
-            'Ya existe un negocio con ese nombre. Prueba con otro.');
+          'Ya existe un negocio con ese nombre. Prueba con otro.',
+        );
       }
 
       // Crear usuario en Supabase Auth
@@ -163,7 +168,9 @@ class AuthService {
         'slug': slug,
         'business_type_id': businessTypeId,
         'accepted_terms': acceptedTerms,
-        'terms_accepted_at': acceptedTerms ? DateTime.now().toIso8601String() : null,
+        'terms_accepted_at': acceptedTerms
+            ? DateTime.now().toIso8601String()
+            : null,
         'link_url': 'https://$slug.quinindews.com',
       });
 
@@ -191,6 +198,10 @@ class AuthService {
     required String address,
   }) async {
     try {
+      email = normalizeEmail(email);
+      final phoneError = await _checkPhoneUniqueness(phone);
+      if (phoneError != null) return AuthResult.fail(phoneError);
+
       final response = await _supabase.auth.signUp(
         email: email,
         password: password,
@@ -232,6 +243,10 @@ class AuthService {
     required String tenantSlug, // para saber a qué tienda pertenece
   }) async {
     try {
+      email = normalizeEmail(email);
+      final phoneError = await _checkPhoneUniqueness(phone);
+      if (phoneError != null) return AuthResult.fail(phoneError);
+
       final response = await _supabase.auth.signUp(
         email: email,
         password: password,
@@ -321,10 +336,12 @@ class AuthService {
   // ─────────────────────────────────────────────
   static Future<AuthResult> changeEmail({required String newEmail}) async {
     try {
+      newEmail = normalizeEmail(newEmail);
       await _supabase.auth.updateUser(UserAttributes(email: newEmail));
       await _supabase
           .from('profiles')
-          .update({'email': newEmail}).eq('id', _supabase.auth.currentUser!.id);
+          .update({'email': newEmail})
+          .eq('id', _supabase.auth.currentUser!.id);
       return AuthResult.ok();
     } on AuthException catch (e) {
       return AuthResult.fail(_translateAuthError(e.message));
@@ -338,9 +355,13 @@ class AuthService {
   // ─────────────────────────────────────────────
   static Future<AuthResult> changePhone({required String newPhone}) async {
     try {
+      final phoneError = await _checkPhoneUniqueness(newPhone);
+      if (phoneError != null) return AuthResult.fail(phoneError);
+
       await _supabase
           .from('profiles')
-          .update({'phone': newPhone}).eq('id', _supabase.auth.currentUser!.id);
+          .update({'phone': newPhone})
+          .eq('id', _supabase.auth.currentUser!.id);
       return AuthResult.ok();
     } catch (e) {
       return AuthResult.fail('Error al cambiar el teléfono.');
@@ -407,7 +428,9 @@ class AuthService {
           .maybeSingle();
 
       if (questions == null) {
-        return AuthResult.fail('Esta cuenta no tiene preguntas de seguridad configuradas.');
+        return AuthResult.fail(
+          'Esta cuenta no tiene preguntas de seguridad configuradas.',
+        );
       }
 
       final a1Match = questions['answer_1'] == answer1.toLowerCase().trim();
@@ -424,7 +447,7 @@ class AuthService {
           'q1': questions['question_1'],
           'q2': questions['question_2'],
           'q3': questions['question_3'],
-        }
+        },
       });
     } catch (e) {
       return AuthResult.fail('Error al validar las respuestas.');
@@ -438,10 +461,12 @@ class AuthService {
     required String email,
   }) async {
     try {
-      final result = await _supabase.rpc(
-        'get_security_questions_by_email',
-        params: {'user_email': email.toLowerCase().trim()},
-      ) as List<dynamic>;
+      final result =
+          await _supabase.rpc(
+                'get_security_questions_by_email',
+                params: {'user_email': email.toLowerCase().trim()},
+              )
+              as List<dynamic>;
 
       if (result.isEmpty) {
         return AuthResult.fail('Esta cuenta no tiene preguntas configuradas.');
@@ -489,6 +514,35 @@ class AuthService {
   // ─────────────────────────────────────────────
   // HELPERS PRIVADOS
   // ─────────────────────────────────────────────
+
+  /// Normaliza correos (ej. para Gmail elimina puntos y alias con +)
+  static String normalizeEmail(String email) {
+    String clean = email.trim().toLowerCase();
+    if (clean.endsWith('@gmail.com')) {
+      final parts = clean.split('@');
+      var localPart = parts[0];
+      if (localPart.contains('+')) {
+        localPart = localPart.substring(0, localPart.indexOf('+'));
+      }
+      localPart = localPart.replaceAll('.', '');
+      return '$localPart@gmail.com';
+    }
+    return clean;
+  }
+
+  /// Verifica si el teléfono ya está registrado (con excepción del admin)
+  static Future<String?> _checkPhoneUniqueness(String phone) async {
+    final cleanPhone = phone.trim();
+    if (cleanPhone == '+593980991658') return null; // Excepción permitida
+
+    final existing = await _supabase
+        .from('profiles')
+        .select('id')
+        .eq('phone', cleanPhone)
+        .maybeSingle();
+    if (existing != null) return 'Este número de teléfono ya está registrado.';
+    return null;
+  }
 
   /// Convierte el nombre del negocio a slug limpio para URL
   /// "Mi Restaurante!" → "mi-restaurante"

@@ -1,5 +1,4 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:functions_client/functions_client.dart';
 import 'auth_service.dart';
 
 /// Resultado de la validación de correo de trabajador
@@ -68,7 +67,8 @@ class WorkerEmailService {
     if (formatResult.tenantSlug != managerTenantSlug) {
       return WorkerEmailResult(
         isValid: false,
-        error: 'El correo del trabajador debe usar el dominio de tu tienda: '
+        error:
+            'El correo del trabajador debe usar el dominio de tu tienda: '
             '@$managerTenantSlug.com',
       );
     }
@@ -103,11 +103,13 @@ class WorkerEmailService {
     required String firstName,
     required String lastName,
     required String email,
+    required String phone,
     required String password,
     required String tenantId,
     required String managerTenantSlug,
   }) async {
     try {
+      email = AuthService.normalizeEmail(email);
       // Validar email antes de crear
       final validation = await validateWorkerEmail(
         workerEmail: email,
@@ -125,6 +127,7 @@ class WorkerEmailService {
           'firstName': firstName,
           'lastName': lastName,
           'email': email,
+          'phone': phone,
           'password': password,
           'tenantId': tenantId,
         },
@@ -152,18 +155,47 @@ class WorkerEmailService {
   // ─────────────────────────────────────────────
   // OBTENER TRABAJADORES DE UN TENANT
   // ─────────────────────────────────────────────
-  static Future<List<Map<String, dynamic>>> getWorkers(
-      String tenantId) async {
+  static Future<List<Map<String, dynamic>>> getWorkers(String tenantId) async {
     try {
       final result = await _supabase
           .from('workers')
-          .select('id, profile_id, first_name, last_name, email, created_at')
+          .select('id, profile_id, first_name, last_name, email, phone, created_at')
           .eq('tenant_id', tenantId)
           .order('created_at');
 
       return List<Map<String, dynamic>>.from(result);
     } catch (e) {
       return [];
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // ACTUALIZAR TRABAJADOR
+  // ─────────────────────────────────────────────
+  static Future<AuthResult> updateWorker({
+    required String profileId,
+    required String firstName,
+    required String lastName,
+    required String phone,
+  }) async {
+    try {
+      // 1. Actualizar profiles
+      await _supabase.from('profiles').update({
+        'first_name': firstName,
+        'last_name': lastName,
+        'phone': phone,
+      }).eq('id', profileId);
+
+      // 2. Actualizar workers
+      await _supabase.from('workers').update({
+        'first_name': firstName,
+        'last_name': lastName,
+        'phone': phone,
+      }).eq('profile_id', profileId);
+
+      return AuthResult.ok();
+    } catch (e) {
+      return AuthResult.fail('Error al actualizar el trabajador: $e');
     }
   }
 

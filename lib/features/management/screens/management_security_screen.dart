@@ -216,20 +216,35 @@ class _ManagementSecurityScreenState extends State<ManagementSecurityScreen>
     });
   }
 
-  void _showWorkerModal() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _WorkerFormSheet(
-        tenantId: _tenantId!,
-        tenantSlug: _tenantSlug!,
-        onSaved: () {
-          Navigator.pop(context);
-          _loadData();
-        },
-      ),
-    );
+  void _showWorkerModal({Map<String, dynamic>? workerToEdit}) {
+    if (workerToEdit != null) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => _WorkerEditFormSheet(
+          worker: workerToEdit,
+          onSaved: () {
+            Navigator.pop(context);
+            _loadData();
+          },
+        ),
+      );
+    } else {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => _WorkerFormSheet(
+          tenantId: _tenantId!,
+          tenantSlug: _tenantSlug!,
+          onSaved: () {
+            Navigator.pop(context);
+            _loadData();
+          },
+        ),
+      );
+    }
   }
 
   Future<void> _deleteWorker(int index) async {
@@ -298,10 +313,10 @@ class _ManagementSecurityScreenState extends State<ManagementSecurityScreen>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Tu cuenta personal', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                            Text('Cuenta de trabajador', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                             SizedBox(height: 4),
                             Text(
-                              'Aquí puedes actualizar tu contraseña, correo, teléfono y preguntas de seguridad. Estos cambios solo afectan a tu cuenta de trabajador.',
+                              'Como trabajador, tu cuenta es administrada por el propietario del negocio. No tienes permisos para cambiar tu contraseña, correo o número de teléfono desde aquí.',
                               style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5),
                             ),
                           ],
@@ -311,39 +326,39 @@ class _ManagementSecurityScreenState extends State<ManagementSecurityScreen>
                   ),
                 ),
               ],
-              _CollapsibleSection(
-                title: 'Contraseña',
-                icon: Icons.lock_outline_rounded,
-                accentColor: AppColors.primary,
-                initiallyExpanded: true,
-                child: _buildPasswordSection(),
-              ),
-              const SizedBox(height: 16),
-              _CollapsibleSection(
-                title: 'Correo electrónico',
-                icon: Icons.mail_outline_rounded,
-                accentColor: AppColors.accentTeal,
-                child: _buildEmailSection(),
-              ),
-              const SizedBox(height: 16),
-              _CollapsibleSection(
-                title: 'Teléfono',
-                icon: Icons.phone_outlined,
-                accentColor: AppColors.accentGreen,
-                child: _buildPhoneSection(),
-              ),
-              const SizedBox(height: 16),
-              _CollapsibleSection(
-                title: 'Preguntas de seguridad',
-                icon: Icons.shield_outlined,
-                accentColor: AppColors.error,
-                statusChip: _questionsConfigured 
-                  ? const AppChip(label: 'Configurado', color: AppColors.success)
-                  : const AppChip(label: 'Pendiente', color: AppColors.accentAmber),
-                child: _buildQuestionsSection(),
-              ),
-              const SizedBox(height: 16),
               if (!_isWorker) ...[
+                _CollapsibleSection(
+                  title: 'Contraseña',
+                  icon: Icons.lock_outline_rounded,
+                  accentColor: AppColors.primary,
+                  initiallyExpanded: true,
+                  child: _buildPasswordSection(),
+                ),
+                const SizedBox(height: 16),
+                _CollapsibleSection(
+                  title: 'Correo electrónico',
+                  icon: Icons.mail_outline_rounded,
+                  accentColor: AppColors.accentTeal,
+                  child: _buildEmailSection(),
+                ),
+                const SizedBox(height: 16),
+                _CollapsibleSection(
+                  title: 'Teléfono',
+                  icon: Icons.phone_outlined,
+                  accentColor: AppColors.accentGreen,
+                  child: _buildPhoneSection(),
+                ),
+                const SizedBox(height: 16),
+                _CollapsibleSection(
+                  title: 'Preguntas de seguridad',
+                  icon: Icons.shield_outlined,
+                  accentColor: AppColors.error,
+                  statusChip: _questionsConfigured 
+                    ? const AppChip(label: 'Configurado', color: AppColors.success)
+                    : const AppChip(label: 'Pendiente', color: AppColors.accentAmber),
+                  child: _buildQuestionsSection(),
+                ),
+                const SizedBox(height: 16),
                 _CollapsibleSection(
                   title: 'Trabajadores',
                   icon: Icons.group_outlined,
@@ -512,7 +527,7 @@ class _ManagementSecurityScreenState extends State<ManagementSecurityScreen>
           if (_workers.length < 2)
             AppButton(
               label: 'Agregar trabajador',
-              onPressed: _showWorkerModal,
+              onPressed: () => _showWorkerModal(),
               color: AppColors.primary,
             ),
         ],
@@ -542,6 +557,11 @@ class _ManagementSecurityScreenState extends State<ManagementSecurityScreen>
             ),
             const AppChip(label: 'Activo', color: AppColors.success),
             const SizedBox(width: 8),
+            IconButton(
+              icon: const Icon(Icons.edit_outlined, color: AppColors.textSecondary, size: 20),
+              onPressed: () => _showWorkerModal(workerToEdit: worker),
+              tooltip: 'Editar trabajador',
+            ),
             IconButton(
               icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error, size: 20),
               onPressed: () => _deleteWorker(index),
@@ -617,6 +637,7 @@ class _WorkerFormSheetState extends State<_WorkerFormSheet> {
   final _wFirstCtrl    = TextEditingController();
   final _wLastCtrl     = TextEditingController();
   final _wEmailCtrl    = TextEditingController();
+  final _wPhoneCtrl    = TextEditingController();
   final _wPassCtrl     = TextEditingController();
   bool _obscureWorkerPass = true;
   bool _savingWorker   = false;
@@ -624,7 +645,7 @@ class _WorkerFormSheetState extends State<_WorkerFormSheet> {
   bool _workerIsError  = true;
 
   Future<void> _createWorker() async {
-    if ([_wFirstCtrl, _wLastCtrl, _wEmailCtrl, _wPassCtrl]
+    if ([_wFirstCtrl, _wLastCtrl, _wEmailCtrl, _wPhoneCtrl, _wPassCtrl]
         .any((c) => c.text.trim().isEmpty)) {
       setState(() { _workerFeedback = 'Completa todos los campos del trabajador.'; _workerIsError = true; });
       return;
@@ -636,6 +657,7 @@ class _WorkerFormSheetState extends State<_WorkerFormSheet> {
       firstName: _wFirstCtrl.text.trim(),
       lastName: _wLastCtrl.text.trim(),
       email: _wEmailCtrl.text.trim(),
+      phone: _wPhoneCtrl.text.trim(),
       password: _wPassCtrl.text.trim(),
       tenantId: widget.tenantId,
       managerTenantSlug: widget.tenantSlug,
@@ -659,6 +681,7 @@ class _WorkerFormSheetState extends State<_WorkerFormSheet> {
     _wFirstCtrl.dispose();
     _wLastCtrl.dispose();
     _wEmailCtrl.dispose();
+    _wPhoneCtrl.dispose();
     _wPassCtrl.dispose();
     super.dispose();
   }
@@ -709,6 +732,9 @@ class _WorkerFormSheetState extends State<_WorkerFormSheet> {
                 const AppLabel('Correo'), const SizedBox(height: 6),
                 AppTextField(controller: _wEmailCtrl, hint: 'maria@tutienda.com', icon: Icons.mail_outline_rounded, keyboardType: TextInputType.emailAddress),
                 const SizedBox(height: 16),
+                const AppLabel('Teléfono (WhatsApp)'), const SizedBox(height: 6),
+                AppTextField(controller: _wPhoneCtrl, hint: '+593 99 000 0000', icon: Icons.phone_outlined, keyboardType: TextInputType.phone),
+                const SizedBox(height: 16),
                 const AppLabel('Contraseña temporal'), const SizedBox(height: 6),
                 AppTextField(
                   controller: _wPassCtrl,
@@ -723,6 +749,122 @@ class _WorkerFormSheetState extends State<_WorkerFormSheet> {
                 if (_workerFeedback != null) ...[const SizedBox(height: 16), AppFeedbackBanner(message: _workerFeedback!, isError: _workerIsError)],
                 const SizedBox(height: 32),
                 AppButton(label: 'Crear trabajador', onPressed: _createWorker, isLoading: _savingWorker),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkerEditFormSheet extends StatefulWidget {
+  final Map<String, dynamic> worker;
+  final VoidCallback onSaved;
+
+  const _WorkerEditFormSheet({required this.worker, required this.onSaved});
+
+  @override
+  State<_WorkerEditFormSheet> createState() => _WorkerEditFormSheetState();
+}
+
+class _WorkerEditFormSheetState extends State<_WorkerEditFormSheet> {
+  final _wFirstCtrl    = TextEditingController();
+  final _wLastCtrl     = TextEditingController();
+  final _wPhoneCtrl    = TextEditingController();
+  bool _savingWorker   = false;
+  String? _workerFeedback;
+  bool _workerIsError  = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _wFirstCtrl.text = widget.worker['first_name'] ?? '';
+    _wLastCtrl.text = widget.worker['last_name'] ?? '';
+    _wPhoneCtrl.text = widget.worker['phone'] ?? '';
+  }
+
+  Future<void> _updateWorker() async {
+    if ([_wFirstCtrl, _wLastCtrl, _wPhoneCtrl].any((c) => c.text.trim().isEmpty)) {
+      setState(() { _workerFeedback = 'Completa el nombre, apellido y teléfono.'; _workerIsError = true; });
+      return;
+    }
+    
+    setState(() { _savingWorker = true; _workerFeedback = null; });
+    
+    final result = await WorkerEmailService.updateWorker(
+      profileId: widget.worker['profile_id'],
+      firstName: _wFirstCtrl.text.trim(),
+      lastName: _wLastCtrl.text.trim(),
+      phone: _wPhoneCtrl.text.trim(),
+    );
+    
+    if (!mounted) return;
+    
+    setState(() {
+      _savingWorker = false;
+      _workerFeedback = result.success ? 'Trabajador actualizado correctamente.' : result.error;
+      _workerIsError  = !result.success;
+    });
+
+    if (result.success) {
+      widget.onSaved();
+    }
+  }
+
+  @override
+  void dispose() {
+    _wFirstCtrl.dispose();
+    _wLastCtrl.dispose();
+    _wPhoneCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 12, bottom: 12),
+            width: 40, height: 4,
+            decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
+          ),
+          Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+              left: 24, right: 24,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Editar trabajador', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const AppLabel('Nombre'), const SizedBox(height: 6),
+                      AppTextField(controller: _wFirstCtrl, hint: 'María', icon: Icons.person_outline_rounded),
+                    ])),
+                    const SizedBox(width: 12),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const AppLabel('Apellido'), const SizedBox(height: 6),
+                      AppTextField(controller: _wLastCtrl, hint: 'García', icon: Icons.person_outline_rounded),
+                    ])),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const AppLabel('Teléfono (WhatsApp)'), const SizedBox(height: 6),
+                AppTextField(controller: _wPhoneCtrl, hint: '+593 99 000 0000', icon: Icons.phone_outlined, keyboardType: TextInputType.phone),
+                if (_workerFeedback != null) ...[const SizedBox(height: 16), AppFeedbackBanner(message: _workerFeedback!, isError: _workerIsError)],
+                const SizedBox(height: 32),
+                AppButton(label: 'Actualizar trabajador', onPressed: _updateWorker, isLoading: _savingWorker),
               ],
             ),
           ),

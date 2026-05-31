@@ -26,11 +26,11 @@ BEGIN
 
   -- Asignar el límite basado en el tier
   CASE v_tier
-    WHEN 'freemium' THEN v_limit := 20;
+    WHEN 'freemium' THEN v_limit := 10;
     WHEN 'low' THEN v_limit := 100;
     WHEN 'mid' THEN v_limit := 500;
     WHEN 'high' THEN v_limit := 999999; -- Ilimitado
-    ELSE v_limit := 20;
+    ELSE v_limit := 10;
   END CASE;
 
   -- Contar cuántos productos tiene actualmente este tenant
@@ -73,11 +73,11 @@ BEGIN
   SELECT subscription_tier INTO v_tier FROM public.tenants WHERE id = p_tenant_id;
   
   CASE v_tier
-    WHEN 'freemium' THEN v_limit := 20;
+    WHEN 'freemium' THEN v_limit := 10;
     WHEN 'low' THEN v_limit := 100;
     WHEN 'mid' THEN v_limit := 500;
     WHEN 'high' THEN v_limit := 999999;
-    ELSE v_limit := 20;
+    ELSE v_limit := 10;
   END CASE;
 
   -- Obtener el conteo

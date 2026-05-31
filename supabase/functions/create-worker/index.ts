@@ -55,7 +55,7 @@ serve(async (req) => {
     }
 
     // Leer datos del body
-    const { firstName, lastName, email, password, tenantId } = await req.json();
+    const { firstName, lastName, email, phone, password, tenantId } = await req.json();
 
     if (!firstName || !lastName || !email || !password || !tenantId) {
       return new Response(JSON.stringify({ error: "Faltan campos requeridos." }), {
@@ -76,9 +76,9 @@ serve(async (req) => {
       });
     }
 
-    let workerLimit = 1; // Default freemium
+    let workerLimit = 2; // Default freemium
     switch (tenantData.subscription_tier) {
-      case "freemium": workerLimit = 1; break;
+      case "freemium": workerLimit = 2; break;
       case "low": workerLimit = 3; break;
       case "mid": workerLimit = 5; break;
       case "high": workerLimit = 999999; break; // Ilimitado
@@ -115,7 +115,7 @@ serve(async (req) => {
       email,
       password,
       email_confirm: true, // Confirmar email automáticamente
-      user_metadata: { role: "worker" },
+      user_metadata: { role: "worker", phone },
     });
 
     if (createError || !newUser?.user) {
@@ -131,6 +131,7 @@ serve(async (req) => {
     const { error: profileError } = await supabaseAdmin.from("profiles").insert({
       id: workerId,
       email,
+      phone,
       role: "worker",
       first_name: firstName,
       last_name: lastName,

@@ -40,6 +40,7 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
   bool _savingWhatsapp   = false;
   bool _savingCover      = false;
   bool _waEnabled        = true;
+  bool _isWorker         = false;
 
   String? _nameFeedback;
   bool    _nameIsError = true;
@@ -95,7 +96,14 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
         _avatarUrl = profile['avatar_url'];
       }
       
-      if (mounted) setState(() => _loading = false);
+      final isWorker = await TenantService.isCurrentUserWorker();
+      
+      if (mounted) {
+        setState(() {
+          _isWorker = isWorker;
+          _loading = false;
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -372,7 +380,25 @@ class _ManagementSettingsScreenState extends State<ManagementSettingsScreen>
                 child: AppShimmerLoader(height: 120, borderRadius: 16),
               )),
             )
-          : Center(
+          : _isWorker
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.admin_panel_settings_outlined, size: 64, color: AppColors.textSecondary.withValues(alpha: 0.5)),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Como trabajador, no tienes permisos para editar los ajustes del negocio. Tu cuenta es administrada por el propietario.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 15, color: AppColors.textSecondary, height: 1.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 800),
                 child: FadeTransition(

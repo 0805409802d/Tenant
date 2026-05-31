@@ -88,7 +88,7 @@ class _ManagementSubscriptionsScreenState extends State<ManagementSubscriptionsS
                 title: 'Freemium',
                 price: '\$0',
                 period: '/mes',
-                features: const ['Hasta 20 productos', 'Soporte estándar'],
+                features: const ['Hasta 10 productos', 'Soporte estándar'],
                 buttonText: 'Plan actual',
                 isCurrent: true,
                 color: AppColors.textSecondary,
